@@ -22,6 +22,7 @@ export function createLoopsRoutes(service: LoopsService) {
     .get("/", zValidator("query", z.object({ status: loopStatus.optional() })), async (c) => {
       return c.json(await service.list(c.get("userId"), c.req.valid("query").status));
     })
+    .get("/areas", async (c) => c.json(await service.listAreas(c.get("userId"))))
     .post("/:id/process", zValidator("param", idParam), zValidator("json", processDecision), async (c) => {
       return c.json(await service.process(c.get("userId"), c.req.valid("param").id, c.req.valid("json")));
     })
@@ -34,6 +35,20 @@ export function createLoopsRoutes(service: LoopsService) {
       zValidator("json", z.object({ horizon: loopHorizon })),
       async (c) => {
         return c.json(await service.reschedule(c.get("userId"), c.req.valid("param").id, c.req.valid("json").horizon));
+      },
+    )
+    .post("/:id/shelve", zValidator("param", idParam), async (c) => {
+      return c.json(await service.shelve(c.get("userId"), c.req.valid("param").id));
+    })
+    .post("/:id/drop", zValidator("param", idParam), async (c) => {
+      return c.json(await service.drop(c.get("userId"), c.req.valid("param").id));
+    })
+    .post(
+      "/:id/area",
+      zValidator("param", idParam),
+      zValidator("json", z.object({ areaId: z.uuid().nullable() })),
+      async (c) => {
+        return c.json(await service.setArea(c.get("userId"), c.req.valid("param").id, c.req.valid("json").areaId));
       },
     );
 }

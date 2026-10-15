@@ -31,6 +31,7 @@ export function captureLoop(input: CaptureLoopInput, userId: string, now: Date):
     processedAt: null,
     completedAt: null,
     updatedAt: now,
+    lastActivityAt: now,
   };
   return { loop, events: [{ name: "loop.captured", payload: { loopId: loop.id, userId } }] };
 }
@@ -41,7 +42,7 @@ export function processLoop(loop: Loop, decision: ProcessDecision, now: Date): {
     throw new DomainError(`No se puede procesar un loop en estado "${loop.status}"`);
   }
 
-  const base = { ...loop, processedAt: now, updatedAt: now };
+  const base = { ...loop, processedAt: now, updatedAt: now, lastActivityAt: now };
   let next: Loop;
   switch (decision.kind) {
     case "activate":
@@ -97,7 +98,7 @@ export function completeStep(
 
   const othersPending = steps.some((s) => s.loopId === loop.id && s.id !== stepId && s.status === "pending");
   if (othersPending) {
-    return { loop: { ...loop, updatedAt: now }, step: doneStep, events };
+    return { loop: { ...loop, updatedAt: now, lastActivityAt: now }, step: doneStep, events };
   }
 
   const closed = closeLoop(loop, now);
@@ -116,7 +117,8 @@ export function completeLoop(loop: Loop, now: Date): { loop: Loop; events: Domai
  * Cambia el horizonte de un loop activo. Es aparte de `processLoop` a propósito:
  * procesar sólo acepta inbox/someday, y eso es lo que hace que una doble tecla
  * en el inbox dé 409 en vez de pisar la primera decisión.
- * No emite eventos: ningún otro módulo lo necesita todavía.
+ * No emite eventos: ningún otro módulo lo necesita todavía. Tampoco cuenta como
+ * actividad: un loop que se posterga cada semana tiene que verse estancado.
  */
 export function rescheduleLoop(loop: Loop, horizon: LoopHorizon, now: Date): { loop: Loop; events: DomainEvent[] } {
   if (loop.status !== "active") {
@@ -125,20 +127,44 @@ export function rescheduleLoop(loop: Loop, horizon: LoopHorizon, now: Date): { l
   return { loop: { ...loop, horizon, updatedAt: now }, events: [] };
 }
 
+/** Manda un loop activo a "algún día". Como reprogramar: sin eventos todavía. */
+export function shelveLoop(loop: Loop, now: Date): { loop: Loop; events: DomainEvent[] } {
+  if (loop.status !== "active") {
+    throw new DomainError(`No se puede mandar a algún día un loop en estado "${loop.status}"`);
+  }
+  return { loop: { ...loop, status: "someday", horizon: null, updatedAt: now }, events: [] };
+}
+
+/** Descarta un loop activo. Desde inbox o someday se descarta procesando. */
+export function dropLoop(loop: Loop, now: Date): { loop: Loop; events: DomainEvent[] } {
+  if (loop.status !== "active") {
+    throw new DomainError(`No se puede descartar un loop en estado "${loop.status}"`);
+  }
+  return { loop: { ...loop, status: "dropped", horizon: null, updatedAt: now }, events: [] };
+}
+
+/** Clasificar no es avanzar: no toca `lastActivityAt`. Los cerrados no se editan. */
+export function setLoopArea(loop: Loop, areaId: string | null, now: Date): { loop: Loop; events: DomainEvent[] } {
+  if (loop.status === "done" || loop.status === "dropped") {
+    throw new DomainError(`No se puede cambiar el área de un loop en estado "${loop.status}"`);
+  }
+  return { loop: { ...loop, areaId, updatedAt: now }, events: [] };
+}
+
 function closeLoop(loop: Loop, now: Date): { loop: Loop; events: DomainEvent[] } {
   return {
-    loop: { ...loop, status: "done", horizon: null, completedAt: now, updatedAt: now },
+    loop: { ...loop, status: "done", horizon: null, completedAt: now, updatedAt: now, lastActivityAt: now },
     events: [{ name: "loop.completed", payload: { loopId: loop.id, userId: loop.userId } }],
   };
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Estancado: activo y sin pasos completados ni ediciones en `days` días. */
+/** Estancado: activo y sin actividad real (ver `lastActivityAt`) ni pasos completados en `days` días. */
 export function isStale(loop: Loop, steps: Step[], now: Date, days = 7): boolean {
   if (loop.status !== "active") return false;
   const lastActivity = steps
     .filter((s) => s.loopId === loop.id && s.completedAt)
-    .reduce((latest, s) => Math.max(latest, s.completedAt!.getTime()), loop.updatedAt.getTime());
+    .reduce((latest, s) => Math.max(latest, s.completedAt!.getTime()), loop.lastActivityAt.getTime());
   return now.getTime() - lastActivity >= days * DAY_MS;
 }

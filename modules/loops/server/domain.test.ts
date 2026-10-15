@@ -5,14 +5,18 @@ import {
   completeLoop,
   completeStep,
   DomainError,
+  dropLoop,
   isStale,
   nextAction,
   processLoop,
   rescheduleLoop,
+  setLoopArea,
+  shelveLoop,
 } from "./domain.ts";
 
 const USER = "00000000-0000-4000-8000-000000000001";
 const LOOP_ID = "00000000-0000-4000-8000-0000000000aa";
+const AREA_ID = "00000000-0000-4000-8000-0000000000bb";
 const T0 = new Date("2026-10-01T10:00:00Z");
 const T1 = new Date("2026-10-02T10:00:00Z");
 
@@ -30,6 +34,7 @@ function makeLoop(overrides: Partial<Loop> = {}): Loop {
     processedAt: T0,
     completedAt: null,
     updatedAt: T0,
+    lastActivityAt: T0,
     ...overrides,
   };
 }
@@ -174,6 +179,39 @@ describe("rescheduleLoop", () => {
   it("no reprograma un loop que no está activo", () => {
     expect(() => rescheduleLoop(makeLoop({ status: "inbox", horizon: null }), "today", T1)).toThrow(DomainError);
   });
+
+  it("no cuenta como actividad", () => {
+    expect(rescheduleLoop(makeLoop(), "week", T1).loop.lastActivityAt).toEqual(T0);
+  });
+});
+
+describe("shelveLoop y dropLoop", () => {
+  it("sacan un loop activo y le borran el horizonte, sin eventos", () => {
+    const shelved = shelveLoop(makeLoop(), T1);
+    expect(shelved.loop).toMatchObject({ status: "someday", horizon: null, updatedAt: T1, lastActivityAt: T0 });
+    expect(shelved.events).toEqual([]);
+    expect(dropLoop(makeLoop(), T1).loop).toMatchObject({ status: "dropped", horizon: null, completedAt: null });
+  });
+
+  it("sólo aceptan loops activos (inbox y someday se procesan)", () => {
+    const someday = makeLoop({ status: "someday", horizon: null });
+    expect(() => shelveLoop(someday, T1)).toThrow(DomainError);
+    expect(() => dropLoop(makeLoop({ status: "inbox", horizon: null }), T1)).toThrow(DomainError);
+  });
+});
+
+describe("setLoopArea", () => {
+  it("asigna o quita el área sin contar como actividad", () => {
+    const { loop } = setLoopArea(makeLoop(), AREA_ID, T1);
+    expect(loop).toMatchObject({ areaId: AREA_ID, updatedAt: T1, lastActivityAt: T0 });
+    expect(setLoopArea(loop, null, T1).loop.areaId).toBeNull();
+    expect(setLoopArea(makeLoop({ status: "inbox", horizon: null }), AREA_ID, T1).loop.areaId).toBe(AREA_ID);
+  });
+
+  it("no toca loops cerrados", () => {
+    expect(() => setLoopArea(makeLoop({ status: "done", horizon: null }), AREA_ID, T1)).toThrow(DomainError);
+    expect(() => setLoopArea(makeLoop({ status: "dropped", horizon: null }), AREA_ID, T1)).toThrow(DomainError);
+  });
 });
 
 describe("isStale", () => {
@@ -187,6 +225,13 @@ describe("isStale", () => {
   it("un paso completado reciente cuenta como actividad", () => {
     const steps = [makeStep("a", 1, { status: "done", completedAt: days(3) })];
     expect(isStale(makeLoop(), steps, days(8))).toBe(false);
+  });
+
+  it("procesar, completar un paso o cerrar mueven la actividad; reprogramar no", () => {
+    const processed = processLoop(makeLoop({ status: "someday", horizon: null }), { kind: "activate", horizon: "later" }, days(5));
+    expect(processed.loop.lastActivityAt).toEqual(days(5));
+    const postponed = rescheduleLoop(makeLoop(), "week", days(5)).loop;
+    expect(isStale(postponed, [], days(7))).toBe(true);
   });
 
   it("el umbral es configurable y sólo aplica a activos", () => {

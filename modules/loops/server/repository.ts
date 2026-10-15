@@ -1,7 +1,7 @@
 /** Acceso a las tablas loops.*. Sin reglas de negocio: eso vive en domain.ts. */
 import type { Db } from "@hub/db";
 import { and, asc, eq } from "drizzle-orm";
-import type { Loop, LoopStatus } from "../contract.ts";
+import type { Area, Loop, LoopStatus } from "../contract.ts";
 import { areas, contexts, loops } from "./schema.ts";
 
 /** Db o transacción: los dos exponen la misma API de consultas. */
@@ -28,6 +28,18 @@ export async function listLoops(db: Executor, userId: string, status?: LoopStatu
     .from(loops)
     .where(status ? and(eq(loops.userId, userId), eq(loops.status, status)) : eq(loops.userId, userId))
     .orderBy(asc(loops.createdAt));
+}
+
+export async function listAreas(db: Executor, userId: string): Promise<Area[]> {
+  return db.select().from(areas).where(eq(areas.userId, userId)).orderBy(asc(areas.position));
+}
+
+export async function findArea(db: Executor, userId: string, id: string): Promise<Area | null> {
+  const [row] = await db
+    .select()
+    .from(areas)
+    .where(and(eq(areas.userId, userId), eq(areas.id, id)));
+  return row ?? null;
 }
 
 export async function updateLoop(db: Executor, loop: Loop): Promise<void> {

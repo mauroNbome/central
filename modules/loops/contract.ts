@@ -26,9 +26,21 @@ export const loop = z.object({
   createdAt: z.date(),
   processedAt: z.date().nullable(),
   completedAt: z.date().nullable(),
+  /** Cualquier cambio. Lo usan el cache y la sincronización. */
   updatedAt: z.date(),
+  /** Avance real (procesar, completar pasos, editar). Reprogramar no cuenta: define "estancado". */
+  lastActivityAt: z.date(),
 });
 export type Loop = z.infer<typeof loop>;
+
+export const area = z.object({
+  id: z.uuid(),
+  userId: z.uuid(),
+  name: z.string(),
+  color: z.string(),
+  position: z.number().int(),
+});
+export type Area = z.infer<typeof area>;
 
 export const step = z.object({
   id: z.uuid(),

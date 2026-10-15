@@ -2,6 +2,7 @@ import { Kbd } from "@hub/ui";
 import { useRef, useState } from "react";
 import { CaptureInput } from "./CaptureInput.tsx";
 import { Inbox } from "./Inbox.tsx";
+import { Loops } from "./Loops.tsx";
 import { isCaptureKey, tabForKey, tabKeys, type Tab } from "./keys.ts";
 import { NoticeBar, useNotice } from "./Notice.tsx";
 import { useLoops } from "./queries.ts";
@@ -19,6 +20,7 @@ export function LoopsHome() {
   const counts: Record<Tab, number | undefined> = {
     inbox: inbox.data?.length,
     today: active.data?.filter((l) => l.horizon === "today").length,
+    loops: undefined,
   };
 
   useHotkeys((e) => {
@@ -59,7 +61,9 @@ export function LoopsHome() {
       </nav>
 
       <section className="mt-4 flex flex-1 flex-col">
-        {tab === "inbox" ? <Inbox onNotice={showNotice} /> : <Today onNotice={showNotice} />}
+        {tab === "inbox" && <Inbox onNotice={showNotice} />}
+        {tab === "today" && <Today onNotice={showNotice} />}
+        {tab === "loops" && <Loops onNotice={showNotice} />}
       </section>
 
       <NoticeBar notice={notice} />

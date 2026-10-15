@@ -22,6 +22,27 @@ Cuarta línea opcional, sólo si hubo una alternativa seria que se descartó:
 `✗ Descartado: ... porque ...`
 ```
 
+## 2026-10-15 · "Estancado" usa `last_activity_at`, no `updated_at`
+Mauro decidió que reprogramar no cuente como actividad. `updated_at` sigue siendo "cualquier cambio" porque lo usan el cache y la sync. La columna la mueven procesar, completar un paso y cerrar; reprogramar y asignar área no. La migración copia `updated_at` a mano porque el default `now()` dejaba todo "recién tocado".
+→ modules/loops/server/domain.ts, packages/db/migrations/0001_unusual_mandroid.sql
+✗ Descartado: no tocar `updated_at` al reprogramar, porque mentiría sobre cuándo cambió la fila.
+
+## 2026-10-15 · Una vista con modos escucha teclas en fase de captura (`useHotkeys(…, { first: true })`)
+Dentro de "asignar área" o "filtrar", el `1` es un área y no la pestaña 1. El shell ignora las teclas con `defaultPrevented`. El orden de registro no sirve, porque la vista se monta después que el shell y su listener queda segundo.
+→ modules/loops/client/useHotkeys.ts, modules/loops/client/Loops.tsx
+
+## 2026-10-15 · En la vista Loops el cursor sigue al siguiente loop por id, y un overlay local muestra el cambio en el acto
+Ahí un loop decidido no desaparece: salta a otra sección. Con el cursor por índice, la segunda tecla caería sobre otro loop cualquiera, que puede ser uno real. El overlay tapa el tick en que el cache todavía no se actualizó, y se descarta cuando el cache trae el mismo objeto (`placeLoop`).
+→ modules/loops/client/Loops.tsx, modules/loops/client/useLoopOverlay.ts, modules/loops/client/queries.ts
+
+## 2026-10-15 · Activo → algún día o descartado con rutas propias (`/shelve`, `/drop`); el cliente elige la ruta según el estado
+`planDecision` mapea las mismas teclas del inbox a process/reschedule/complete/shelve/drop. `processLoop` sigue rechazando activos, para no perder la protección contra la doble tecla en el inbox.
+→ modules/loops/client/loopsView.ts, modules/loops/server/domain.ts
+
+## 2026-10-15 · Que el área sea del mismo usuario se chequea en el servicio
+La FK `area_id → areas.id` sólo garantiza que el área exista, no que sea del mismo usuario. Sin ese chequeo, un loop podría apuntar al área de otra persona.
+→ modules/loops/server/service.ts
+
 ## 2026-10-15 · Reprogramar es una operación aparte, no "procesar" de nuevo
 `processLoop` rechaza a propósito los loops activos: es lo que hace que una doble tecla en el inbox dé 409 en vez de pisar la primera decisión. Por eso `rescheduleLoop` (sólo activos) tiene su propia ruta, `POST /:id/reschedule`, y no emite eventos hasta que algún módulo los necesite (sumar uno toca `contract.ts`).
 → modules/loops/server/domain.ts, modules/loops/server/routes.ts

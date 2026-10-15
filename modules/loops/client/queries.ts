@@ -1,6 +1,18 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { CaptureLoopInput, LoopHorizon, LoopStatus, ProcessDecision } from "../contract.ts";
-import { captureLoop, completeLoop, fetchLoops, processLoop, rescheduleLoop, type LoopDto } from "./api.ts";
+import {
+  captureLoop,
+  completeLoop,
+  dropLoop,
+  fetchAreas,
+  fetchLoops,
+  processLoop,
+  rescheduleLoop,
+  setLoopArea,
+  shelveLoop,
+  type LoopDto,
+} from "./api.ts";
+import type { LoopCall } from "./loopsView.ts";
 
 export const loopKeys = {
   all: ["loops"] as const,
@@ -9,6 +21,13 @@ export const loopKeys = {
 
 export function useLoops(status?: LoopStatus) {
   return useQuery({ queryKey: loopKeys.list(status), queryFn: () => fetchLoops(status) });
+}
+
+/** Fuera de `loopKeys.all` a propósito: cada decisión refresca los loops, y las áreas casi no cambian. */
+const areasKey = ["loops:areas"] as const;
+
+export function useAreas() {
+  return useQuery({ queryKey: areasKey, queryFn: fetchAreas, staleTime: Infinity });
 }
 
 /**
@@ -39,6 +58,7 @@ function optimisticLoop(input: CaptureLoopInput): LoopDto {
     processedAt: null,
     completedAt: null,
     updatedAt: now,
+    lastActivityAt: now,
   };
 }
 
@@ -116,4 +136,63 @@ export function useRescheduleLoop() {
     onError: (_err, { loop }) => setHorizon(qc, loop.id, loop.horizon),
     onSettled: () => settle(qc),
   });
+}
+
+/**
+ * Pone el loop en cada lista del cache donde le toca estar (por su estado) y lo
+ * saca de las demás. Con el loop nuevo es el update optimista; con el original,
+ * el rollback de ese loop solo.
+ */
+function placeLoop(qc: QueryClient, loop: LoopDto) {
+  for (const [key] of qc.getQueriesData<LoopDto[]>({ queryKey: [...loopKeys.all, "list"] })) {
+    const belongs = key[2] === "all" || key[2] === loop.status;
+    qc.setQueryData<LoopDto[]>(key, (old) => {
+      if (!old) return old;
+      const present = old.some((l) => l.id === loop.id);
+      if (!belongs) return present ? old.filter((l) => l.id !== loop.id) : old;
+      if (present) return old.map((l) => (l.id === loop.id ? loop : l));
+      // Las listas vienen ordenadas por fecha de captura.
+      const at = old.findIndex((l) => l.createdAt > loop.createdAt);
+      return at < 0 ? [...old, loop] : [...old.slice(0, at), loop, ...old.slice(at)];
+    });
+  }
+}
+
+/** Cambio sobre un loop cualquiera, con `next` como lo que se muestra mientras responde la api. */
+function useLoopChange<V extends { loop: LoopDto; next: LoopDto }>(mutationFn: (vars: V) => Promise<LoopDto>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: loopKeys.all,
+    mutationFn,
+    onMutate: async ({ next }) => {
+      await qc.cancelQueries({ queryKey: loopKeys.all });
+      placeLoop(qc, next);
+    },
+    onError: (_err, { loop }) => placeLoop(qc, loop),
+    onSettled: () => settle(qc),
+  });
+}
+
+function runLoopCall(id: string, call: LoopCall): Promise<LoopDto> {
+  switch (call.kind) {
+    case "process":
+      return processLoop(id, call.decision);
+    case "reschedule":
+      return rescheduleLoop(id, call.horizon);
+    case "complete":
+      return completeLoop(id);
+    case "shelve":
+      return shelveLoop(id);
+    case "drop":
+      return dropLoop(id);
+  }
+}
+
+/** Decide sobre un loop en cualquier estado abierto (vista Loops). */
+export function useDecideLoop() {
+  return useLoopChange(({ loop, call }: { loop: LoopDto; next: LoopDto; call: LoopCall }) => runLoopCall(loop.id, call));
+}
+
+export function useSetLoopArea() {
+  return useLoopChange(({ loop, next }: { loop: LoopDto; next: LoopDto }) => setLoopArea(loop.id, next.areaId));
 }

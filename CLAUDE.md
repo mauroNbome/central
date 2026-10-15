@@ -84,8 +84,9 @@ hub/
 ```
 loops.loops
   id, user_id, title, raw_text, status, area_id, horizon, source,
-  created_at, processed_at, completed_at, updated_at
+  created_at, processed_at, completed_at, updated_at, last_activity_at
   status:  inbox | active | someday | done | dropped
+  last_activity_at: avance real (procesar, completar pasos, editar); reprogramar no cuenta
   horizon: today | week | later | null   (solo cuando status = active)
   source:  web | pwa | voice | bot | mcp
 

@@ -1,4 +1,5 @@
 import type { LoopHorizon, ProcessDecision } from "../contract.ts";
+import type { StatusFilter } from "./loopsView.ts";
 
 /**
  * Mapa de teclas del procesado. Inicial de la palabra en español, salvo
@@ -24,10 +25,11 @@ export const horizonKeys = [
 
 export type HorizonKey = (typeof horizonKeys)[number];
 
-/** Pestañas por número: `3` queda para la vista Loops. */
+/** Pestañas por número. */
 export const tabKeys = [
   { key: "1", tab: "inbox", label: "Inbox" },
   { key: "2", tab: "today", label: "Hoy" },
+  { key: "3", tab: "loops", label: "Loops" },
 ] as const;
 
 export type Tab = (typeof tabKeys)[number]["tab"];
@@ -75,6 +77,61 @@ export function todayActionForKey(key: string, mode: TodayMode): TodayAction | n
       return { type: "startReschedule" };
   }
   return null;
+}
+
+/** Filtros de estado de la vista Loops, después de `f`. Inicial de cada palabra. */
+export const statusFilterKeys = [
+  { key: "t", label: "Todos", filter: "all" },
+  { key: "i", label: "Inbox", filter: "inbox" },
+  { key: "e", label: "En curso", filter: "active" },
+  { key: "a", label: "Algún día", filter: "someday" },
+  { key: "c", label: "Cerrados", filter: "closed" },
+] as const satisfies readonly { key: string; label: string; filter: StatusFilter }[];
+
+export type StatusFilterKey = (typeof statusFilterKeys)[number];
+
+export type LoopsMode = "normal" | "area" | "filter";
+
+/** Áreas por posición: `1` es la primera; `0` es "sin área" al asignar y "todas" al filtrar. */
+type AreaSlot = number | null;
+
+export type LoopsAction =
+  | Move
+  | { type: "decide"; choice: DecisionKey }
+  | { type: "startArea" }
+  | { type: "area"; slot: AreaSlot }
+  | { type: "startFilter" }
+  | { type: "filterStatus"; choice: StatusFilterKey }
+  | { type: "filterArea"; slot: AreaSlot }
+  | { type: "cancel" };
+
+function areaSlotForKey(key: string): AreaSlot | undefined {
+  if (!/^[0-9]$/.test(key)) return undefined;
+  return key === "0" ? null : Number(key) - 1;
+}
+
+/**
+ * En la vista Loops las teclas del inbox re-deciden cualquier loop abierto.
+ * `e` (área) y `f` (filtro) abren un segundo paso, como `r` en Hoy.
+ */
+export function loopsActionForKey(key: string, mode: LoopsMode): LoopsAction | null {
+  const slot = areaSlotForKey(key);
+  if (mode === "area") return slot === undefined ? { type: "cancel" } : { type: "area", slot };
+  if (mode === "filter") {
+    if (slot !== undefined) return { type: "filterArea", slot };
+    const choice = statusFilterKeys.find((f) => f.key === key.toLowerCase());
+    return choice ? { type: "filterStatus", choice } : { type: "cancel" };
+  }
+  const move = moveForKey(key);
+  if (move) return move;
+  switch (key.toLowerCase()) {
+    case "e":
+      return { type: "startArea" };
+    case "f":
+      return { type: "startFilter" };
+  }
+  const choice = decisionKeys.find((d) => d.key === key.toLowerCase());
+  return choice ? { type: "decide", choice } : null;
 }
 
 export function tabForKey(key: string): Tab | null {

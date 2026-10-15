@@ -172,6 +172,68 @@ describe("POST /loops/:id/reschedule", () => {
   });
 });
 
+describe("POST /loops/:id/shelve y /drop", () => {
+  it("sacan un loop activo de los activos", async () => {
+    const { post, get } = setup();
+    const shelved = await activeLoop(post);
+    const dropped = await activeLoop(post);
+
+    expect(await (await post(`/loops/${shelved}/shelve`, {})).json()).toMatchObject({ status: "someday", horizon: null });
+    expect(await (await post(`/loops/${dropped}/drop`, {})).json()).toMatchObject({ status: "dropped", horizon: null });
+    expect(await (await get("/loops?status=active")).json()).toHaveLength(0);
+  });
+
+  it("un loop que no está activo da 409", async () => {
+    const { post } = setup();
+    const id = await activeLoop(post);
+    await post(`/loops/${id}/shelve`, {});
+    expect((await post(`/loops/${id}/shelve`, {})).status).toBe(409);
+    expect((await post(`/loops/${id}/drop`, {})).status).toBe(409);
+  });
+});
+
+describe("áreas", () => {
+  it("lista las áreas del usuario en orden y asigna o quita una", async () => {
+    const { post, get, userId } = setup();
+    await seedDefaults(db, userId);
+    const areas = (await (await get("/loops/areas")).json()) as { id: string; name: string }[];
+    expect(areas.map((a) => a.name)).toEqual(["SELL", "BUILD", "SHARE", "Hogar"]);
+    const id = await activeLoop(post);
+
+    const res = await post(`/loops/${id}/area`, { areaId: areas[1]!.id });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ areaId: areas[1]!.id });
+    expect(await (await post(`/loops/${id}/area`, { areaId: null })).json()).toMatchObject({ areaId: null });
+  });
+
+  it("no deja usar un área de otro usuario", async () => {
+    const a = setup();
+    const b = setup();
+    await seedDefaults(db, a.userId);
+    const [foreign] = (await (await a.get("/loops/areas")).json()) as { id: string }[];
+    const id = await activeLoop(b.post);
+
+    expect((await b.post(`/loops/${id}/area`, { areaId: foreign!.id })).status).toBe(404);
+  });
+
+  it("reprogramar y asignar área no mueven la última actividad", async () => {
+    const { post, get, userId } = setup();
+    await seedDefaults(db, userId);
+    const [area] = (await (await get("/loops/areas")).json()) as { id: string }[];
+    const id = await activeLoop(post);
+    const before = ((await (await get("/loops")).json()) as { lastActivityAt: string }[])[0]!.lastActivityAt;
+
+    await post(`/loops/${id}/reschedule`, { horizon: "later" });
+    const after = (await (await post(`/loops/${id}/area`, { areaId: area!.id })).json()) as {
+      lastActivityAt: string;
+      updatedAt: string;
+    };
+
+    expect(after.lastActivityAt).toBe(before);
+    expect(after.updatedAt > before).toBe(true);
+  });
+});
+
 describe("seedDefaults", () => {
   it("es idempotente", async () => {
     const userId = randomUUID();

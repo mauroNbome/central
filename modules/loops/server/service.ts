@@ -4,8 +4,16 @@
  */
 import type { EventBus } from "@hub/core";
 import type { Db } from "@hub/db";
-import type { CaptureLoopInput, Loop, LoopHorizon, LoopStatus, ProcessDecision } from "../contract.ts";
-import { captureLoop, completeLoop, processLoop, rescheduleLoop } from "./domain.ts";
+import type { Area, CaptureLoopInput, Loop, LoopHorizon, LoopStatus, ProcessDecision } from "../contract.ts";
+import {
+  captureLoop,
+  completeLoop,
+  dropLoop,
+  processLoop,
+  rescheduleLoop,
+  setLoopArea,
+  shelveLoop,
+} from "./domain.ts";
 import * as repo from "./repository.ts";
 
 export class NotFoundError extends Error {
@@ -72,6 +80,27 @@ export function createLoopsService({ db, bus, now = () => new Date() }: LoopsDep
 
     reschedule(userId: string, id: string, horizon: LoopHorizon): Promise<Loop> {
       return change(userId, id, (loop, at) => rescheduleLoop(loop, horizon, at));
+    },
+
+    shelve(userId: string, id: string): Promise<Loop> {
+      return change(userId, id, shelveLoop);
+    },
+
+    drop(userId: string, id: string): Promise<Loop> {
+      return change(userId, id, dropLoop);
+    },
+
+    listAreas(userId: string): Promise<Area[]> {
+      return repo.listAreas(db, userId);
+    },
+
+    /**
+     * La FK de area_id sólo garantiza que el área exista, no que sea del mismo
+     * usuario: eso se chequea acá.
+     */
+    async setArea(userId: string, id: string, areaId: string | null): Promise<Loop> {
+      if (areaId && !(await repo.findArea(db, userId, areaId))) throw new NotFoundError("Área no encontrada");
+      return change(userId, id, (loop, at) => setLoopArea(loop, areaId, at));
     },
   };
 }

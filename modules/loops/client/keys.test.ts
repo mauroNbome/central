@@ -6,6 +6,7 @@ import {
   horizonKeys,
   inboxActionForKey,
   isCaptureKey,
+  loopsActionForKey,
   shouldIgnoreHotkey,
   tabForKey,
   todayActionForKey,
@@ -62,7 +63,7 @@ describe("todayActionForKey", () => {
   });
 
   it("ninguna tecla de una vista choca con las globales", () => {
-    const viewKeys = [...decisionKeys.map((d) => d.key), "x", "r", "j", "k"];
+    const viewKeys = [...decisionKeys.map((d) => d.key), "x", "r", "e", "f", "j", "k"];
     for (const k of viewKeys) {
       expect(isCaptureKey(k)).toBe(false);
       expect(tabForKey(k)).toBeNull();
@@ -90,5 +91,31 @@ describe("newLoopId", () => {
     const id = newLoopId({ getRandomValues: (a) => crypto.getRandomValues(a) });
     expect(captureLoopInput.safeParse({ id, rawText: "x", source: "web" }).success).toBe(true);
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+});
+
+describe("loopsActionForKey", () => {
+  it("las teclas del inbox deciden y j/k mueven", () => {
+    expect(loopsActionForKey("a", "normal")).toMatchObject({ type: "decide", choice: { label: "Algún día" } });
+    expect(loopsActionForKey("j", "normal")).toEqual({ type: "move", delta: 1 });
+  });
+
+  it("los números quedan libres para las pestañas fuera de un modo", () => {
+    expect(loopsActionForKey("3", "normal")).toBeNull();
+  });
+
+  it("e asigna área por posición; 0 la quita; otra tecla cancela", () => {
+    expect(loopsActionForKey("e", "normal")).toEqual({ type: "startArea" });
+    expect(loopsActionForKey("2", "area")).toEqual({ type: "area", slot: 1 });
+    expect(loopsActionForKey("0", "area")).toEqual({ type: "area", slot: null });
+    expect(loopsActionForKey("Escape", "area")).toEqual({ type: "cancel" });
+  });
+
+  it("f filtra por estado con letras y por área con números", () => {
+    expect(loopsActionForKey("F", "normal")).toEqual({ type: "startFilter" });
+    expect(loopsActionForKey("c", "filter")).toMatchObject({ type: "filterStatus", choice: { filter: "closed" } });
+    expect(loopsActionForKey("1", "filter")).toEqual({ type: "filterArea", slot: 0 });
+    expect(loopsActionForKey("0", "filter")).toEqual({ type: "filterArea", slot: null });
+    expect(loopsActionForKey("h", "filter")).toEqual({ type: "cancel" });
   });
 });

@@ -44,6 +44,7 @@ export const loops = loopsSchema.table(
     processedAt: timestamp("processed_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("loops_user_status_idx").on(t.userId, t.status),

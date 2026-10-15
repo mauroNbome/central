@@ -51,3 +51,29 @@ export async function rescheduleLoop(id: string, horizon: LoopHorizon): Promise<
   if (!res.ok) return fail(res);
   return res.json();
 }
+
+export async function shelveLoop(id: string): Promise<LoopDto> {
+  const res = await api[":id"].shelve.$post({ param: { id } });
+  if (!res.ok) return fail(res);
+  return res.json();
+}
+
+export async function dropLoop(id: string): Promise<LoopDto> {
+  const res = await api[":id"].drop.$post({ param: { id } });
+  if (!res.ok) return fail(res);
+  return res.json();
+}
+
+export type AreaDto = InferResponseType<typeof api.areas.$get, 200>[number];
+
+export async function fetchAreas(): Promise<AreaDto[]> {
+  const res = await api.areas.$get();
+  if (!res.ok) return fail(res);
+  return res.json();
+}
+
+export async function setLoopArea(id: string, areaId: string | null): Promise<LoopDto> {
+  const res = await api[":id"].area.$post({ param: { id }, json: { areaId } });
+  if (!res.ok) return fail(res);
+  return res.json();
+}

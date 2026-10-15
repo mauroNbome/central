@@ -1,0 +1,417 @@
+{
+  "id": "8bec09fb-0413-43a1-a6ef-eef1756ad8a6",
+  "prevId": "9de0f1f3-5d27-420d-8545-899aa09964ca",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "loops.areas": {
+      "name": "areas",
+      "schema": "loops",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "color": {
+          "name": "color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "loops.contexts": {
+      "name": "contexts",
+      "schema": "loops",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "icon": {
+          "name": "icon",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "loops.loops": {
+      "name": "loops",
+      "schema": "loops",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raw_text": {
+          "name": "raw_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "loop_status",
+          "typeSchema": "loops",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'inbox'"
+        },
+        "area_id": {
+          "name": "area_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "horizon": {
+          "name": "horizon",
+          "type": "loop_horizon",
+          "typeSchema": "loops",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "loop_source",
+          "typeSchema": "loops",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_activity_at": {
+          "name": "last_activity_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "loops_user_status_idx": {
+          "name": "loops_user_status_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "loops_area_id_areas_id_fk": {
+          "name": "loops_area_id_areas_id_fk",
+          "tableFrom": "loops",
+          "tableTo": "areas",
+          "schemaTo": "loops",
+          "columnsFrom": [
+            "area_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "loops_horizon_iff_active": {
+          "name": "loops_horizon_iff_active",
+          "value": "(\"loops\".\"loops\".\"status\" = 'active') = (\"loops\".\"loops\".\"horizon\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "loops.steps": {
+      "name": "steps",
+      "schema": "loops",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "loop_id": {
+          "name": "loop_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "context_id": {
+          "name": "context_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "step_status",
+          "typeSchema": "loops",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "estimate_minutes": {
+          "name": "estimate_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "steps_loop_position_idx": {
+          "name": "steps_loop_position_idx",
+          "columns": [
+            {
+              "expression": "loop_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "steps_loop_id_loops_id_fk": {
+          "name": "steps_loop_id_loops_id_fk",
+          "tableFrom": "steps",
+          "tableTo": "loops",
+          "schemaTo": "loops",
+          "columnsFrom": [
+            "loop_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "steps_context_id_contexts_id_fk": {
+          "name": "steps_context_id_contexts_id_fk",
+          "tableFrom": "steps",
+          "tableTo": "contexts",
+          "schemaTo": "loops",
+          "columnsFrom": [
+            "context_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "loops.loop_horizon": {
+      "name": "loop_horizon",
+      "schema": "loops",
+      "values": [
+        "today",
+        "week",
+        "later"
+      ]
+    },
+    "loops.loop_source": {
+      "name": "loop_source",
+      "schema": "loops",
+      "values": [
+        "web",
+        "pwa",
+        "voice",
+        "bot",
+        "mcp"
+      ]
+    },
+    "loops.loop_status": {
+      "name": "loop_status",
+      "schema": "loops",
+      "values": [
+        "inbox",
+        "active",
+        "someday",
+        "done",
+        "dropped"
+      ]
+    },
+    "loops.step_status": {
+      "name": "step_status",
+      "schema": "loops",
+      "values": [
+        "pending",
+        "done"
+      ]
+    }
+  },
+  "schemas": {
+    "loops": "loops"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
