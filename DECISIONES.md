@@ -22,6 +22,32 @@ Cuarta línea opcional, sólo si hubo una alternativa seria que se descartó:
 `✗ Descartado: ... porque ...`
 ```
 
+## 2026-10-15 · Reprogramar es una operación aparte, no "procesar" de nuevo
+`processLoop` rechaza a propósito los loops activos: es lo que hace que una doble tecla en el inbox dé 409 en vez de pisar la primera decisión. Por eso `rescheduleLoop` (sólo activos) tiene su propia ruta, `POST /:id/reschedule`, y no emite eventos hasta que algún módulo los necesite (sumar uno toca `contract.ts`).
+→ modules/loops/server/domain.ts, modules/loops/server/routes.ts
+✗ Descartado: dejar procesar desde `active` porque se pierde la protección contra la doble tecla.
+
+## 2026-10-15 · El inbox oculta en el acto los loops decididos, aparte del update optimista
+TanStack Query saca el loop del cache recién un tick después de `mutate` (`await cancelQueries` + notificación con `setTimeout`): con dos teclas rápidas la segunda caía sobre el mismo loop y daba 409. Un set local de ids decididos lo resuelve en el mismo evento.
+→ modules/loops/client/useLoopCursor.ts (lo usan Inbox y Hoy)
+
+## 2026-10-15 · Rollback optimista por id, y refetch sólo al terminar la última mutación
+Restaurar una "foto previa" del cache borra otras capturas en vuelo; refrescar después de cada decisión trae loops que el servidor todavía no procesó y reaparecen. Por eso `onError` saca o reinserta sólo ese loop y `settle` invalida cuando `isMutating` llega a 1.
+→ modules/loops/client/queries.ts
+
+## 2026-10-15 · Cada módulo arma su cliente `hc` con el tipo de sus propias rutas
+`@hub/loops/server` exporta `LoopsRoutes` y el cliente del módulo hace `hc<LoopsRoutes>("/api/loops")`. Importar `AppType` de `apps/api` haría que un módulo dependa de una app, al revés de la arquitectura.
+→ modules/loops/server/index.ts, modules/loops/client/api.ts
+✗ Descartado: `hc<AppType>` en el shell inyectado a los módulos porque el shell tendría que conocer las rutas de cada módulo.
+
+## 2026-10-15 · `@source` de Tailwind con glob de archivos, no de directorio
+`@source "…/modules/*/client"` (directorio con comodín) no genera ninguna clase en `vite dev`; el build sí funciona porque escanea el grafo de módulos, así que el bug sólo se ve en dev. Con `…/client/**/*.{ts,tsx}` anda en los dos.
+→ apps/web/src/index.css
+
+## 2026-10-15 · El id de un loop sale de `newLoopId()`, no directo de `crypto.randomUUID()`
+`randomUUID` sólo existe en contextos seguros (https o localhost): abriendo la app por IP de la red local, por ejemplo desde el celular, la captura fallaría. `newLoopId` cae a un UUID v4 con `getRandomValues`.
+→ modules/loops/client/ids.ts
+
 ## 2026-10-15 · Tests de integración aislados por `user_id` aleatorio, sobre la base de dev
 Cada test crea su propio usuario: no hace falta truncar tablas ni una base aparte, y los tests corren en paralelo sin pisarse. El costo es que la base de dev junta filas de prueba.
 → apps/api/src/app.test.ts

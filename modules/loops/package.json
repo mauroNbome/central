@@ -15,17 +15,20 @@
     "@hono/zod-validator": "catalog:",
     "@hub/core": "workspace:*",
     "@hub/db": "workspace:*",
+    "@hub/ui": "workspace:*",
     "drizzle-orm": "catalog:",
     "hono": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@tanstack/react-query": "catalog:",
     "@types/react": "catalog:",
     "react": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
   "peerDependencies": {
+    "@tanstack/react-query": "catalog:",
     "react": "catalog:"
   }
 }

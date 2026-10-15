@@ -1,0 +1,51 @@
+/*
+ * Tokens del hub. Las utilidades de Tailwind (bg-canvas, text-muted, …) leen
+ * estas variables, así el modo oscuro se resuelve acá y no en cada componente.
+ * Se importa después de `@import "tailwindcss"` en la app.
+ */
+
+@theme inline {
+  --color-canvas: var(--hub-canvas);
+  --color-surface: var(--hub-surface);
+  --color-ink: var(--hub-ink);
+  --color-muted: var(--hub-muted);
+  --color-line: var(--hub-line);
+  --color-accent: var(--hub-accent);
+  --color-accent-soft: var(--hub-accent-soft);
+  --color-danger: var(--hub-danger);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+}
+
+:root {
+  color-scheme: light dark;
+
+  --hub-canvas: oklch(98.5% 0.002 260);
+  --hub-surface: oklch(100% 0 0);
+  --hub-ink: oklch(22% 0.01 260);
+  --hub-muted: oklch(55% 0.01 260);
+  --hub-line: oklch(91% 0.005 260);
+  --hub-accent: oklch(55% 0.18 265);
+  --hub-accent-soft: oklch(95% 0.03 265);
+  --hub-danger: oklch(55% 0.2 25);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --hub-canvas: oklch(17% 0.005 260);
+    --hub-surface: oklch(21% 0.006 260);
+    --hub-ink: oklch(94% 0.005 260);
+    --hub-muted: oklch(66% 0.01 260);
+    --hub-line: oklch(29% 0.008 260);
+    --hub-accent: oklch(72% 0.14 265);
+    --hub-accent-soft: oklch(28% 0.06 265);
+    --hub-danger: oklch(70% 0.17 25);
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+  }
+}

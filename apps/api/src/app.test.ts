@@ -117,6 +117,61 @@ describe("POST /loops/:id/process", () => {
   });
 });
 
+/** Captura un loop y lo activa con horizonte "today". */
+async function activeLoop(post: ReturnType<typeof setup>["post"], rawText = "Algo activo") {
+  const id = randomUUID();
+  await post("/loops", { id, rawText, source: "web" });
+  await post(`/loops/${id}/process`, { kind: "activate", horizon: "today" });
+  return id;
+}
+
+describe("POST /loops/:id/complete", () => {
+  it("cierra un loop activo y emite loop.completed", async () => {
+    const { post, get, bus } = setup();
+    const completed = vi.fn();
+    bus.on("loop.completed", completed);
+    const id = await activeLoop(post);
+
+    const res = await post(`/loops/${id}/complete`, {});
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: "done", horizon: null });
+    expect(completed).toHaveBeenCalledWith(expect.objectContaining({ loopId: id }));
+    expect(await (await get("/loops?status=active")).json()).toHaveLength(0);
+  });
+
+  it("completar dos veces o un loop del inbox da 409", async () => {
+    const { post } = setup();
+    const id = await activeLoop(post);
+    await post(`/loops/${id}/complete`, {});
+    expect((await post(`/loops/${id}/complete`, {})).status).toBe(409);
+
+    const inboxId = randomUUID();
+    await post("/loops", { id: inboxId, rawText: "Sin procesar", source: "web" });
+    expect((await post(`/loops/${inboxId}/complete`, {})).status).toBe(409);
+  });
+});
+
+describe("POST /loops/:id/reschedule", () => {
+  it("cambia el horizonte de un loop activo", async () => {
+    const { post } = setup();
+    const id = await activeLoop(post);
+
+    const res = await post(`/loops/${id}/reschedule`, { horizon: "week" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: "active", horizon: "week" });
+  });
+
+  it("un loop no activo da 409 y un horizonte inválido da 400", async () => {
+    const { post } = setup();
+    const id = randomUUID();
+    await post("/loops", { id, rawText: "En el inbox", source: "web" });
+    expect((await post(`/loops/${id}/reschedule`, { horizon: "today" })).status).toBe(409);
+    expect((await post(`/loops/${id}/reschedule`, { horizon: "nunca" })).status).toBe(400);
+  });
+});
+
 describe("seedDefaults", () => {
   it("es idempotente", async () => {
     const userId = randomUUID();

@@ -1,0 +1,94 @@
+import { describe, expect, it } from "vitest";
+import { captureLoopInput } from "../contract.ts";
+import { newLoopId } from "./ids.ts";
+import {
+  decisionKeys,
+  horizonKeys,
+  inboxActionForKey,
+  isCaptureKey,
+  shouldIgnoreHotkey,
+  tabForKey,
+  todayActionForKey,
+} from "./keys.ts";
+
+describe("inboxActionForKey", () => {
+  it("mapea cada tecla de decisión a su decisión", () => {
+    expect(inboxActionForKey("h")).toEqual({ type: "decide", choice: decisionKeys[0] });
+    expect(inboxActionForKey("x")).toMatchObject({ choice: { decision: { kind: "done" } } });
+    expect(inboxActionForKey("d")).toMatchObject({ choice: { decision: { kind: "drop" } } });
+  });
+
+  it("acepta mayúsculas por si está Bloq Mayús", () => {
+    expect(inboxActionForKey("S")).toMatchObject({ choice: { label: "Semana" } });
+  });
+
+  it("mueve el cursor con j/k y flechas", () => {
+    expect(inboxActionForKey("j")).toEqual({ type: "move", delta: 1 });
+    expect(inboxActionForKey("ArrowUp")).toEqual({ type: "move", delta: -1 });
+  });
+
+  it("ignora teclas sin acción", () => {
+    expect(inboxActionForKey("q")).toBeNull();
+    expect(inboxActionForKey("Enter")).toBeNull();
+  });
+
+  it("no repite teclas", () => {
+    const keys = decisionKeys.map((d) => d.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).not.toContain("j");
+    expect(keys).not.toContain("k");
+    expect(keys).not.toContain("c");
+  });
+});
+
+describe("todayActionForKey", () => {
+  it("x completa, r abre el reprogramado, j/k mueven", () => {
+    expect(todayActionForKey("x", "normal")).toEqual({ type: "complete" });
+    expect(todayActionForKey("r", "normal")).toEqual({ type: "startReschedule" });
+    expect(todayActionForKey("j", "normal")).toEqual({ type: "move", delta: 1 });
+    expect(todayActionForKey("h", "normal")).toBeNull();
+  });
+
+  it("en modo reprogramar, h/s/m eligen horizonte y cualquier otra tecla cancela", () => {
+    expect(todayActionForKey("s", "reschedule")).toEqual({ type: "reschedule", choice: horizonKeys[1] });
+    expect(todayActionForKey("Escape", "reschedule")).toEqual({ type: "cancel" });
+    expect(todayActionForKey("x", "reschedule")).toEqual({ type: "cancel" });
+  });
+
+  it("los horizontes usan las mismas teclas que el inbox", () => {
+    for (const h of horizonKeys) {
+      expect(inboxActionForKey(h.key)).toMatchObject({ choice: { decision: { kind: "activate", horizon: h.horizon } } });
+    }
+  });
+
+  it("ninguna tecla de una vista choca con las globales", () => {
+    const viewKeys = [...decisionKeys.map((d) => d.key), "x", "r", "j", "k"];
+    for (const k of viewKeys) {
+      expect(isCaptureKey(k)).toBe(false);
+      expect(tabForKey(k)).toBeNull();
+    }
+  });
+});
+
+describe("shouldIgnoreHotkey", () => {
+  const base = { key: "h", ctrlKey: false, metaKey: false, altKey: false, target: null };
+
+  it("deja pasar una letra sola fuera de un campo", () => {
+    expect(shouldIgnoreHotkey(base)).toBe(false);
+    expect(shouldIgnoreHotkey({ ...base, target: { tagName: "LI" } as unknown as EventTarget })).toBe(false);
+  });
+
+  it("ignora mientras se escribe y con modificadores", () => {
+    expect(shouldIgnoreHotkey({ ...base, target: { tagName: "INPUT" } as unknown as EventTarget })).toBe(true);
+    expect(shouldIgnoreHotkey({ ...base, target: { isContentEditable: true } as unknown as EventTarget })).toBe(true);
+    expect(shouldIgnoreHotkey({ ...base, metaKey: true })).toBe(true);
+  });
+});
+
+describe("newLoopId", () => {
+  it("genera un uuid v4 válido sin randomUUID (contexto no seguro)", () => {
+    const id = newLoopId({ getRandomValues: (a) => crypto.getRandomValues(a) });
+    expect(captureLoopInput.safeParse({ id, rawText: "x", source: "web" }).success).toBe(true);
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+});

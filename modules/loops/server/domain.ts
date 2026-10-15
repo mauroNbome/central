@@ -5,7 +5,7 @@
  * terminó en rollback).
  */
 import type { HubEvents } from "@hub/core";
-import type { CaptureLoopInput, Loop, NextAction, ProcessDecision, Step } from "../contract.ts";
+import type { CaptureLoopInput, Loop, LoopHorizon, NextAction, ProcessDecision, Step } from "../contract.ts";
 
 export class DomainError extends Error {
   override name = "DomainError";
@@ -110,6 +110,19 @@ export function completeLoop(loop: Loop, now: Date): { loop: Loop; events: Domai
     throw new DomainError(`No se puede completar un loop en estado "${loop.status}"`);
   }
   return closeLoop(loop, now);
+}
+
+/**
+ * Cambia el horizonte de un loop activo. Es aparte de `processLoop` a propósito:
+ * procesar sólo acepta inbox/someday, y eso es lo que hace que una doble tecla
+ * en el inbox dé 409 en vez de pisar la primera decisión.
+ * No emite eventos: ningún otro módulo lo necesita todavía.
+ */
+export function rescheduleLoop(loop: Loop, horizon: LoopHorizon, now: Date): { loop: Loop; events: DomainEvent[] } {
+  if (loop.status !== "active") {
+    throw new DomainError(`No se puede reprogramar un loop en estado "${loop.status}"`);
+  }
+  return { loop: { ...loop, horizon, updatedAt: now }, events: [] };
 }
 
 function closeLoop(loop: Loop, now: Date): { loop: Loop; events: DomainEvent[] } {

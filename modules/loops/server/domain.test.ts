@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { Loop, Step } from "../contract.ts";
-import { captureLoop, completeLoop, completeStep, DomainError, isStale, nextAction, processLoop } from "./domain.ts";
+import {
+  captureLoop,
+  completeLoop,
+  completeStep,
+  DomainError,
+  isStale,
+  nextAction,
+  processLoop,
+  rescheduleLoop,
+} from "./domain.ts";
 
 const USER = "00000000-0000-4000-8000-000000000001";
 const LOOP_ID = "00000000-0000-4000-8000-0000000000aa";
@@ -145,6 +154,25 @@ describe("completeLoop", () => {
     const { loop, events } = completeLoop(makeLoop(), T1);
     expect(loop).toMatchObject({ status: "done", horizon: null, completedAt: T1 });
     expect(events).toEqual([{ name: "loop.completed", payload: { loopId: LOOP_ID, userId: USER } }]);
+  });
+});
+
+describe("completeLoop: estados", () => {
+  it("no completa un loop que no está activo", () => {
+    expect(() => completeLoop(makeLoop({ status: "inbox", horizon: null }), T1)).toThrow(DomainError);
+    expect(() => completeLoop(makeLoop({ status: "done", horizon: null }), T1)).toThrow(DomainError);
+  });
+});
+
+describe("rescheduleLoop", () => {
+  it("cambia el horizonte de un loop activo, sin eventos", () => {
+    const { loop, events } = rescheduleLoop(makeLoop({ horizon: "today" }), "week", T1);
+    expect(loop).toMatchObject({ status: "active", horizon: "week", updatedAt: T1 });
+    expect(events).toEqual([]);
+  });
+
+  it("no reprograma un loop que no está activo", () => {
+    expect(() => rescheduleLoop(makeLoop({ status: "inbox", horizon: null }), "today", T1)).toThrow(DomainError);
   });
 });
 

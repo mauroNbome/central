@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@import "@hub/ui/theme.css";
+
+/* Los paquetes del workspace se ven como node_modules y Tailwind no los
+   escanea solo. El glob cubre módulos nuevos sin tocar este archivo. Tiene
+   que terminar en archivos: un directorio con comodín no genera nada en dev. */
+@source "../../../modules/*/client/**/*.{ts,tsx}";
+@source "../../../packages/ui/src";

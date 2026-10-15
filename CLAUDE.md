@@ -73,7 +73,7 @@ hub/
 ### Stack (confirmado 2026-10-15)
 
 - TypeScript en todo el monorepo, con pnpm workspaces y Turborepo
-- Frontend: React + Vite, TanStack Query para updates optimistas, PWA con cola offline de capturas en IndexedDB
+- Frontend: React + Vite, Tailwind v4 (tokens en `packages/ui/src/theme.css`), TanStack Query para updates optimistas, PWA con cola offline de capturas en IndexedDB
 - Backend: Node con Hono (cliente RPC `hc` para tipos de punta a punta); validación con Zod compartida entre front y back
 - Datos: Postgres 17 + Drizzle, con migraciones versionadas en `packages/db/migrations`
 - Tests: Vitest; la lógica de dominio se testea sin base de datos
