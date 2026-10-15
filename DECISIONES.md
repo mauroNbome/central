@@ -22,6 +22,19 @@ Cuarta línea opcional, sólo si hubo una alternativa seria que se descartó:
 `✗ Descartado: ... porque ...`
 ```
 
+## 2026-10-15 · Tests de integración aislados por `user_id` aleatorio, sobre la base de dev
+Cada test crea su propio usuario: no hace falta truncar tablas ni una base aparte, y los tests corren en paralelo sin pisarse. El costo es que la base de dev junta filas de prueba.
+→ apps/api/src/app.test.ts
+✗ Descartado: base `hub_test` con truncate entre tests porque obliga a correrlos en serie y a mantener dos bases migradas.
+
+## 2026-10-15 · Procesar un loop toma `SELECT … FOR UPDATE`
+Con doble tecla llegan dos decisiones a la vez: sin el lock las dos leen "inbox" y la última pisa a la primera. Con el lock, la segunda ve el loop procesado y recibe 409.
+→ modules/loops/server/service.ts
+
+## 2026-10-15 · El `userId` sale del contexto Hono, nunca del request
+Un middleware de la api lo pone (hoy `HUB_USER_ID` fijo); las rutas sólo leen `c.get("userId")`. Cuando llegue auth cambia ese middleware y nada más.
+→ packages/core/src/http.ts, apps/api/src/app.ts
+
 ## 2026-10-15 · El dominio devuelve eventos; se emiten después de guardar
 Las funciones de `domain.ts` son puras y devuelven `events`; quien las llama los emite tras el commit. Emitir antes anunciaría cosas que terminaron en rollback.
 → modules/loops/server/domain.ts

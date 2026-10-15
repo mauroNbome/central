@@ -13,7 +13,8 @@
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
     "db:generate": "pnpm --filter @hub/db generate",
-    "db:migrate": "pnpm --filter @hub/db migrate"
+    "db:migrate": "pnpm --filter @hub/db migrate",
+    "db:seed": "pnpm --filter @hub/api seed"
   },
   "devDependencies": {
     "turbo": "catalog:"

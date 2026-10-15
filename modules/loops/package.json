@@ -12,9 +12,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@hono/zod-validator": "catalog:",
     "@hub/core": "workspace:*",
     "@hub/db": "workspace:*",
     "drizzle-orm": "catalog:",
+    "hono": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
