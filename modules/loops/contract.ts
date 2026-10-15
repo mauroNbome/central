@@ -1,0 +1,79 @@
+/**
+ * API pública del módulo Loops. Otros módulos y las apps importan sólo esto
+ * (o @hub/loops/server|client); el resto del módulo es privado.
+ */
+import { z } from "zod";
+
+export const loopStatus = z.enum(["inbox", "active", "someday", "done", "dropped"]);
+export const loopHorizon = z.enum(["today", "week", "later"]);
+export const loopSource = z.enum(["web", "pwa", "voice", "bot", "mcp"]);
+export const stepStatus = z.enum(["pending", "done"]);
+
+export type LoopStatus = z.infer<typeof loopStatus>;
+export type LoopHorizon = z.infer<typeof loopHorizon>;
+export type LoopSource = z.infer<typeof loopSource>;
+export type StepStatus = z.infer<typeof stepStatus>;
+
+export const loop = z.object({
+  id: z.uuid(),
+  userId: z.uuid(),
+  title: z.string(),
+  rawText: z.string(),
+  status: loopStatus,
+  areaId: z.uuid().nullable(),
+  horizon: loopHorizon.nullable(),
+  source: loopSource,
+  createdAt: z.date(),
+  processedAt: z.date().nullable(),
+  completedAt: z.date().nullable(),
+  updatedAt: z.date(),
+});
+export type Loop = z.infer<typeof loop>;
+
+export const step = z.object({
+  id: z.uuid(),
+  userId: z.uuid(),
+  loopId: z.uuid(),
+  title: z.string(),
+  position: z.number().int(),
+  contextId: z.uuid().nullable(),
+  status: stepStatus,
+  estimateMinutes: z.number().int().positive().nullable(),
+  completedAt: z.date().nullable(),
+  createdAt: z.date(),
+});
+export type Step = z.infer<typeof step>;
+
+/** Decisión al procesar un loop del inbox. Una tecla, una decisión. */
+export const processDecision = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("activate"), horizon: loopHorizon }),
+  z.object({ kind: z.literal("someday") }),
+  z.object({ kind: z.literal("done") }),
+  z.object({ kind: z.literal("drop") }),
+]);
+export type ProcessDecision = z.infer<typeof processDecision>;
+
+/**
+ * El id lo genera el cliente: una captura offline que se reintenta llega con
+ * el mismo id y el servidor la descarta en vez de duplicarla.
+ */
+export const captureLoopInput = z.object({
+  id: z.uuid(),
+  rawText: z.string().trim().min(1),
+  source: loopSource,
+});
+export type CaptureLoopInput = z.infer<typeof captureLoopInput>;
+
+/** Próxima acción: el primer paso pendiente, o el loop mismo si no tiene pasos. */
+export type NextAction =
+  | { kind: "step"; loop: Loop; step: Step }
+  | { kind: "loop"; loop: Loop };
+
+declare module "@hub/core" {
+  interface HubEvents {
+    "loop.captured": { loopId: string; userId: string };
+    "loop.processed": { loopId: string; userId: string; status: LoopStatus };
+    "step.completed": { loopId: string; stepId: string; userId: string };
+    "loop.completed": { loopId: string; userId: string };
+  }
+}

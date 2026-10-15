@@ -1,0 +1,29 @@
+{
+  "name": "@hub/loops",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./contract.ts",
+    "./server": "./server/index.ts",
+    "./client": "./client/index.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hub/core": "workspace:*",
+    "@hub/db": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/react": "catalog:",
+    "react": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "catalog:"
+  }
+}
