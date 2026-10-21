@@ -3,9 +3,11 @@ import { captureLoopInput } from "../contract.ts";
 import { newLoopId } from "./ids.ts";
 import {
   decisionKeys,
+  editorActionForKey,
   horizonKeys,
   inboxActionForKey,
   isCaptureKey,
+  isUndoKey,
   loopsActionForKey,
   shouldIgnoreHotkey,
   tabForKey,
@@ -117,5 +119,58 @@ describe("loopsActionForKey", () => {
     expect(loopsActionForKey("1", "filter")).toEqual({ type: "filterArea", slot: 0 });
     expect(loopsActionForKey("0", "filter")).toEqual({ type: "filterArea", slot: null });
     expect(loopsActionForKey("h", "filter")).toEqual({ type: "cancel" });
+  });
+});
+
+describe("desglosar con p", () => {
+  it("abre el editor en Inbox, Hoy y Loops", () => {
+    expect(inboxActionForKey("p")).toEqual({ type: "breakdown" });
+    expect(todayActionForKey("p", "normal")).toEqual({ type: "breakdown" });
+    expect(loopsActionForKey("p", "normal")).toEqual({ type: "breakdown" });
+  });
+});
+
+describe("todayActionForKey: filtro por contexto", () => {
+  it("f + número elige el contexto; 0 los muestra todos", () => {
+    expect(todayActionForKey("f", "normal")).toEqual({ type: "startFilter" });
+    expect(todayActionForKey("2", "filter")).toEqual({ type: "filterContext", slot: 1 });
+    expect(todayActionForKey("0", "filter")).toEqual({ type: "filterContext", slot: null });
+    expect(todayActionForKey("q", "filter")).toEqual({ type: "cancel" });
+  });
+});
+
+describe("editorActionForKey", () => {
+  const key = (k: string, shiftKey = false) => ({ key: k, shiftKey });
+
+  it("j/k mueven y Shift+J/K reordenan", () => {
+    expect(editorActionForKey(key("j"), "normal")).toEqual({ type: "move", delta: 1 });
+    expect(editorActionForKey(key("J", true), "normal")).toEqual({ type: "reorder", delta: 1 });
+    expect(editorActionForKey(key("ArrowUp", true), "normal")).toEqual({ type: "reorder", delta: -1 });
+  });
+
+  it("con Bloq Mayús, J sin Shift sólo mueve", () => {
+    expect(editorActionForKey(key("J"), "normal")).toEqual({ type: "move", delta: 1 });
+  });
+
+  it("i, o y Enter vuelven a escribir; Esc cierra", () => {
+    for (const k of ["i", "o", "Enter"]) expect(editorActionForKey(key(k), "normal")).toEqual({ type: "insert" });
+    expect(editorActionForKey(key("Escape"), "normal")).toEqual({ type: "close" });
+  });
+
+  it("x completa, d borra y c + número asigna contexto", () => {
+    expect(editorActionForKey(key("x"), "normal")).toEqual({ type: "complete" });
+    expect(editorActionForKey(key("d"), "normal")).toEqual({ type: "remove" });
+    expect(editorActionForKey(key("c"), "normal")).toEqual({ type: "startContext" });
+    expect(editorActionForKey(key("3"), "context")).toEqual({ type: "context", slot: 2 });
+    expect(editorActionForKey(key("0"), "context")).toEqual({ type: "context", slot: null });
+    expect(editorActionForKey(key("Escape"), "context")).toEqual({ type: "cancel" });
+  });
+});
+
+describe("isUndoKey", () => {
+  it("u deshace, también con Bloq Mayús", () => {
+    expect(isUndoKey("u")).toBe(true);
+    expect(isUndoKey("U")).toBe(true);
+    expect(isUndoKey("x")).toBe(false);
   });
 });

@@ -34,5 +34,13 @@ export function useLoopCursor<T extends { id: string }>(source: readonly T[] | u
       setHidden((prev) => new Set(prev).add(id));
       setCursor(index);
     },
+    /** Al deshacer: si el cache todavía no lo había sacado, vuelve a verse. */
+    unhide: (id: string) =>
+      setHidden((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      }),
   };
 }

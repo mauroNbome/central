@@ -11,16 +11,25 @@ export function LoopList({ label, children }: { label: string; children: ReactNo
 
 export function LoopRow({
   title,
+  detail,
   meta,
   active,
   muted = false,
+  done = false,
+  effect,
   onSelect,
 }: {
   title: string;
+  /** Segunda línea, más chica: p. ej. el loop de un paso en Hoy. */
+  detail?: string;
   meta?: string;
   active: boolean;
   muted?: boolean;
-  onSelect: () => void;
+  /** Tachado con ✓: algo completado. */
+  done?: boolean;
+  /** "in": destello al entrar a "Hecho hoy"; "out": se desvanece al completarse. */
+  effect?: "in" | "out";
+  onSelect?: () => void;
 }) {
   const ref = useRef<HTMLLIElement>(null);
 
@@ -32,12 +41,25 @@ export function LoopRow({
     <li
       ref={ref}
       aria-current={active}
+      aria-hidden={effect === "out" || undefined}
       onClick={onSelect}
       className={`flex items-baseline gap-3 border-l-2 px-4 py-2.5 ${
         active ? "border-accent bg-accent-soft" : "border-transparent"
-      }`}
+      } ${effect === "in" ? "motion-safe:animate-done-in" : effect === "out" ? "motion-safe:animate-done-out" : ""}`}
     >
-      <span className={`min-w-0 flex-1 truncate ${muted && !active ? "text-muted" : ""}`}>{title}</span>
+      {done && (
+        <span aria-hidden className="shrink-0 text-success">
+          ✓
+        </span>
+      )}
+      <span className="min-w-0 flex-1">
+        <span
+          className={`block truncate ${(muted || done) && !active ? "text-muted" : ""} ${done ? "line-through" : ""}`}
+        >
+          {title}
+        </span>
+        {detail && <span className="block truncate text-xs text-muted">{detail}</span>}
+      </span>
       {meta && <span className="shrink-0 text-xs text-muted tabular-nums">{meta}</span>}
     </li>
   );
@@ -107,6 +129,22 @@ export function KeyButton({
     >
       <Kbd>{k}</Kbd>
       {label}
+    </button>
+  );
+}
+
+/** Botón de filtro con estado (apretado o no). */
+export function Chip({ pressed, onClick, children }: { pressed: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs transition ${
+        pressed ? "border-accent bg-accent-soft text-ink" : "border-line text-muted hover:text-ink"
+      }`}
+    >
+      {children}
     </button>
   );
 }

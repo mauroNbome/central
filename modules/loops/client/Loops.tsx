@@ -1,6 +1,7 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type { AreaDto, LoopDto } from "./api.ts";
 import {
+  breakdownKey,
   decisionKeys,
   loopsActionForKey,
   statusFilterKeys,
@@ -10,12 +11,15 @@ import {
 } from "./keys.ts";
 import { cursorOrder, decidedLoop, groupLoops, isFolded, planDecision, type LoopFilters } from "./loopsView.ts";
 import type { Notice } from "./Notice.tsx";
-import { EmptyState, KeyButton, Legend, LoadState, LoopList, LoopRow } from "./parts.tsx";
-import { useAreas, useDecideLoop, useLoops, useSetLoopArea } from "./queries.ts";
+import { Chip, EmptyState, KeyButton, Legend, LoadState, LoopList, LoopRow } from "./parts.tsx";
+import { useAreas, useContexts, useDecideLoop, useLoops, useSetLoopArea, useSteps } from "./queries.ts";
+import { StepEditor } from "./StepEditor.tsx";
+import { pendingLabel } from "./steps.ts";
 import { timeAgo } from "./time.ts";
 import { useHotkeys } from "./useHotkeys.ts";
 import { useLoopCursor } from "./useLoopCursor.ts";
 import { useLoopOverlay } from "./useLoopOverlay.ts";
+import { useStepEditing } from "./useStepEditing.ts";
 
 const noAreas: AreaDto[] = [];
 
@@ -30,6 +34,8 @@ export function Loops({ onNotice }: { onNotice: (n: Notice) => void }) {
   const areas = useAreas().data ?? noAreas;
   const decide = useDecideLoop();
   const setArea = useSetLoopArea();
+  const steps = useSteps().data;
+  const contexts = useContexts().data ?? [];
   const [filters, setFilters] = useState<LoopFilters>({ status: "all", areaId: null });
   const [showClosed, setShowClosed] = useState(false);
   const [mode, setMode] = useState<LoopsMode>("normal");
@@ -40,6 +46,7 @@ export function Loops({ onNotice }: { onNotice: (n: Notice) => void }) {
   const { items, index, current, select, move } = useLoopCursor(query.data && ordered);
   const areaById = useMemo(() => new Map(areas.map((a) => [a.id, a])), [areas]);
   const editable = current !== undefined && !isClosed(current);
+  const editing = useStepEditing(current);
 
   /**
    * Un loop que cambia de sección no desaparece: salta a otro lado de la lista.
@@ -112,6 +119,7 @@ export function Loops({ onNotice }: { onNotice: (n: Notice) => void }) {
 
   useHotkeys(
     (e) => {
+      if (editing.loop) return false;
       const action = loopsActionForKey(e.key, mode);
       if (!action) return false;
       if (e.repeat && action.type !== "move") return true;
@@ -121,6 +129,9 @@ export function Loops({ onNotice }: { onNotice: (n: Notice) => void }) {
           break;
         case "decide":
           decideCurrent(action.choice);
+          break;
+        case "breakdown":
+          if (editable) editing.open();
           break;
         case "startArea":
           if (editable && areas.length > 0) setMode("area");
@@ -158,7 +169,8 @@ export function Loops({ onNotice }: { onNotice: (n: Notice) => void }) {
     const closed = isClosed(loop)
       ? `${loop.status === "done" ? "hecho" : "descartado"} ${timeAgo(loop.completedAt ?? loop.updatedAt)}`
       : undefined;
-    return [area, closed].filter(Boolean).join(" · ") || undefined;
+    const pending = isClosed(loop) ? undefined : pendingLabel(steps ?? [], loop.id);
+    return [pending, area, closed].filter(Boolean).join(" · ") || undefined;
   };
 
   let offset = 0;
@@ -199,14 +211,24 @@ export function Loops({ onNotice }: { onNotice: (n: Notice) => void }) {
                 {!folded && (
                   <LoopList label={section.label}>
                     {section.loops.map((loop, i) => (
-                      <LoopRow
-                        key={loop.id}
-                        title={loop.title}
-                        meta={meta(loop)}
-                        active={start + i === index}
-                        muted={loop.status === "someday" || isClosed(loop)}
-                        onSelect={() => select(start + i)}
-                      />
+                      <Fragment key={loop.id}>
+                        <LoopRow
+                          title={loop.title}
+                          meta={meta(loop)}
+                          active={start + i === index}
+                          muted={loop.status === "someday" || isClosed(loop)}
+                          onSelect={() => select(start + i)}
+                        />
+                        {editing.loop?.id === loop.id && (
+                          <StepEditor
+                            loop={loop}
+                            steps={steps}
+                            contexts={contexts}
+                            onClose={editing.close}
+                            onNotice={onNotice}
+                          />
+                        )}
+                      </Fragment>
                     ))}
                   </LoopList>
                 )}
@@ -241,8 +263,20 @@ export function Loops({ onNotice }: { onNotice: (n: Notice) => void }) {
         ) : (
           <>
             {decisionKeys.map((d) => (
-              <KeyButton key={d.key} k={d.key} label={d.label} disabled={!editable} onClick={() => decideCurrent(d)} />
+              <KeyButton
+                key={d.key}
+                k={d.key}
+                label={d.label}
+                disabled={!editable || !!editing.loop}
+                onClick={() => decideCurrent(d)}
+              />
             ))}
+            <KeyButton
+              k={breakdownKey.key}
+              label={breakdownKey.label}
+              disabled={!editable || !!editing.loop}
+              onClick={editing.open}
+            />
             <KeyButton k="e" label="Área" disabled={!editable || areas.length === 0} onClick={() => setMode("area")} />
             <KeyButton k="f" label="Filtrar" onClick={() => setMode("filter")} />
           </>
@@ -286,20 +320,5 @@ function FilterBar({
         </div>
       )}
     </div>
-  );
-}
-
-function Chip({ pressed, onClick, children }: { pressed: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={pressed}
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs transition ${
-        pressed ? "border-accent bg-accent-soft text-ink" : "border-line text-muted hover:text-ink"
-      }`}
-    >
-      {children}
-    </button>
   );
 }

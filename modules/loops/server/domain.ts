@@ -5,7 +5,15 @@
  * terminó en rollback).
  */
 import type { HubEvents } from "@hub/core";
-import type { CaptureLoopInput, Loop, LoopHorizon, NextAction, ProcessDecision, Step } from "../contract.ts";
+import type {
+  CaptureLoopInput,
+  CreateStepInput,
+  Loop,
+  LoopHorizon,
+  NextAction,
+  ProcessDecision,
+  Step,
+} from "../contract.ts";
 
 export class DomainError extends Error {
   override name = "DomainError";
@@ -87,9 +95,7 @@ export function completeStep(
   if (loop.status !== "active") {
     throw new DomainError(`No se puede completar un paso de un loop en estado "${loop.status}"`);
   }
-  const step = steps.find((s) => s.id === stepId && s.loopId === loop.id);
-  if (!step) throw new DomainError("El paso no pertenece al loop");
-  if (step.status === "done") throw new DomainError("El paso ya está completo");
+  const step = findPendingStep(loop, steps, stepId);
 
   const doneStep: Step = { ...step, status: "done", completedAt: now };
   const events: DomainEvent[] = [
@@ -103,6 +109,130 @@ export function completeStep(
 
   const closed = closeLoop(loop, now);
   return { loop: closed.loop, step: doneStep, events: [...events, ...closed.events] };
+}
+
+const isOpen = (loop: Loop) => loop.status === "inbox" || loop.status === "active" || loop.status === "someday";
+
+function assertEditable(loop: Loop) {
+  if (!isOpen(loop)) throw new DomainError(`No se pueden editar los pasos de un loop en estado "${loop.status}"`);
+}
+
+function findPendingStep(loop: Loop, steps: Step[], stepId: string): Step {
+  const step = steps.find((s) => s.id === stepId && s.loopId === loop.id);
+  if (!step) throw new DomainError("El paso no pertenece al loop");
+  if (step.status === "done") throw new DomainError("El paso ya está completo");
+  return step;
+}
+
+/**
+ * Agrega un paso al final. Se desglosa desde el inbox (antes de decidir el
+ * horizonte) o desde un loop abierto cualquiera. Desglosar es avance: mueve
+ * `lastActivityAt`.
+ */
+export function addStep(
+  loop: Loop,
+  steps: Step[],
+  input: CreateStepInput,
+  now: Date,
+): { loop: Loop; step: Step; events: DomainEvent[] } {
+  assertEditable(loop);
+  const own = steps.filter((s) => s.loopId === loop.id);
+  const step: Step = {
+    id: input.id,
+    userId: loop.userId,
+    loopId: loop.id,
+    title: input.title.trim(),
+    position: own.reduce((max, s) => Math.max(max, s.position + 1), 0),
+    contextId: input.contextId,
+    status: "pending",
+    estimateMinutes: null,
+    completedAt: null,
+    createdAt: now,
+  };
+  return { loop: { ...loop, updatedAt: now, lastActivityAt: now }, step, events: [] };
+}
+
+/**
+ * Renumera los pasos 0..n-1 en el orden pedido. La lista tiene que traer todos
+ * los pasos del loop: si no coincide, el cliente tenía una foto vieja y es mejor
+ * un 409 que adivinar dónde van los que faltan. Ordenar no es avance.
+ */
+export function reorderSteps(
+  loop: Loop,
+  steps: Step[],
+  stepIds: string[],
+  now: Date,
+): { loop: Loop; steps: Step[]; events: DomainEvent[] } {
+  assertEditable(loop);
+  const own = new Map(steps.filter((s) => s.loopId === loop.id).map((s) => [s.id, s]));
+  if (stepIds.length !== own.size || new Set(stepIds).size !== stepIds.length || stepIds.some((id) => !own.has(id))) {
+    throw new DomainError("La lista de pasos no coincide con la del loop");
+  }
+  return {
+    loop: { ...loop, updatedAt: now },
+    steps: stepIds.map((id, position) => ({ ...own.get(id)!, position })),
+    events: [],
+  };
+}
+
+/** Clasificar un paso no es avance, como el área de un loop. Sólo pasos pendientes. */
+export function setStepContext(
+  loop: Loop,
+  steps: Step[],
+  stepId: string,
+  contextId: string | null,
+  now: Date,
+): { loop: Loop; step: Step; events: DomainEvent[] } {
+  assertEditable(loop);
+  const step = findPendingStep(loop, steps, stepId);
+  return { loop: { ...loop, updatedAt: now }, step: { ...step, contextId }, events: [] };
+}
+
+/** Borra un paso pendiente. Los hechos quedan: son la historia del loop. */
+export function removeStep(
+  loop: Loop,
+  steps: Step[],
+  stepId: string,
+  now: Date,
+): { loop: Loop; step: Step; events: DomainEvent[] } {
+  assertEditable(loop);
+  const step = findPendingStep(loop, steps, stepId);
+  return { loop: { ...loop, updatedAt: now }, step, events: [] };
+}
+
+/**
+ * Deshace un paso completado por error. Si el loop se había cerrado al
+ * completarlo, se reabre. No es avance: `lastActivityAt` queda como está.
+ */
+export function reopenStep(
+  loop: Loop,
+  steps: Step[],
+  stepId: string,
+  horizon: LoopHorizon | undefined,
+  now: Date,
+): { loop: Loop; step: Step; events: DomainEvent[] } {
+  const step = steps.find((s) => s.id === stepId && s.loopId === loop.id);
+  if (!step) throw new DomainError("El paso no pertenece al loop");
+  if (step.status !== "done") throw new DomainError("El paso no está completo");
+  const reopened = loop.status === "done" ? reopenLoop(loop, horizon, now).loop : loop;
+  assertEditable(reopened);
+  return {
+    loop: { ...reopened, updatedAt: now },
+    step: { ...step, status: "pending", completedAt: null },
+    events: [],
+  };
+}
+
+/**
+ * Deshace el cierre de un loop: vuelve a activo con el horizonte que tenía.
+ * Sin eventos, como reprogramar: ningún módulo escucha todavía.
+ */
+export function reopenLoop(loop: Loop, horizon: LoopHorizon | undefined, now: Date): { loop: Loop; events: DomainEvent[] } {
+  if (loop.status !== "done") throw new DomainError(`No se puede reabrir un loop en estado "${loop.status}"`);
+  return {
+    loop: { ...loop, status: "active", horizon: horizon ?? "today", completedAt: null, updatedAt: now },
+    events: [],
+  };
 }
 
 /** Cierra un loop activo directamente (p. ej. un loop sin pasos que es su propia próxima acción). */

@@ -22,6 +22,45 @@ Cuarta línea opcional, sólo si hubo una alternativa seria que se descartó:
 `✗ Descartado: ... porque ...`
 ```
 
+## 2026-10-16 · Los overlays se descartan cuando el cache cambia respecto de su base, no cuando trae el mismo objeto
+Esperar a ver en el cache el objeto exacto del update optimista falla si el refetch llega en el mismo render: ese objeto nunca se ve y la entrada queda pegada para siempre, tapando al servidor. Pasó en "Hecho hoy": el paso quedaba con la hora del cliente y el loop con la del servidor, y no se veía "loop cerrado". Cada entrada guarda lo que tenía el cache al ponerla (`base`) y se va apenas cambia.
+→ modules/loops/client/useStepOverlay.ts, modules/loops/client/useLoopOverlay.ts
+
+## 2026-10-16 · "Hecho hoy" se calcula en el cliente con lo que ya hay, y reabrir desde ahí pide haber elegido la fila
+Son los pasos con `completedAt` desde la medianoche local más los loops cerrados hoy sin un paso de hoy; un loop que se cerró con su último paso aparece una vez, como ese paso (el dominio usa el mismo instante para los dos). Al completar lo último pendiente el cursor cae solo en "Hecho hoy": `x` ahí reabre sólo si se llegó con `j`/`k` o clic, para que una `x` de más no deshaga lo primero del día.
+→ modules/loops/client/todayView.ts, modules/loops/client/Today.tsx
+✗ Descartado: una ruta `GET /done?since=`, porque `useSteps` y `useLoops()` ya traen todo y la medianoche es del cliente.
+
+## 2026-10-16 · Deshacer un "hecho" reabre con el horizonte que manda el cliente
+Cerrar un loop borra su horizonte (el check `loops_horizon_iff_active` lo exige), así que el servidor no sabe a qué sección volver: `POST /:id/reopen` y `/:id/steps/:stepId/reopen` reciben `horizon` opcional (sin él, Hoy). El "deshacer" del aviso lo tiene porque guarda el loop de antes. Reabrir no mueve `lastActivityAt` ni emite eventos.
+→ modules/loops/server/domain.ts (reopenStep, reopenLoop), modules/loops/contract.ts (reopenInput)
+✗ Descartado: guardar el último horizonte en una columna, porque sólo hace falta para deshacer y el cliente ya lo tiene.
+
+## 2026-10-16 · "Deshacer" vive en el aviso y dura lo que el aviso
+`u` (o el botón) deshace lo del aviso actual; el aviso de la acción siguiente lo reemplaza, así `u` nunca deshace algo que no está a la vista. Un aviso con deshacer dura 10 s en vez de 2,5. Mauro eligió esto antes que un tiempo fijo.
+→ modules/loops/client/Notice.tsx, modules/loops/client/index.tsx
+
+## 2026-10-15 · Reordenar pasos manda la lista completa, y los cambios de pasos van en fila (`scope`)
+Con la lista completa el servidor no adivina dónde van los pasos que no conoce: si no coincide, 409. Para que Enter + Shift+J seguidos no den ese 409, los cambios de pasos, completar y deshacer comparten un `scope` de TanStack Query (`serial`) y llegan en orden; el lock `FOR UPDATE` sobre el loop serializa lo mismo del lado del servidor.
+→ modules/loops/server/domain.ts (reorderSteps), modules/loops/client/queries.ts (useStepChanges)
+✗ Descartado: posiciones fraccionarias o "mover a la posición n", porque con pocos pasos por loop renumerar 0..n-1 es barato y nunca deja huecos ni empates.
+
+## 2026-10-15 · Agregar un paso cuenta como actividad; reordenar, asignar contexto y borrar, no
+Desglosar acerca el loop a cerrarse; ordenar o clasificar no, igual que reprogramar o asignar área. `updated_at` del loop se mueve con cualquier cambio de sus pasos, para el cache y la sync.
+→ modules/loops/server/domain.ts
+
+## 2026-10-15 · El overlay de pasos admite altas y bajas, no sólo cambios
+`useLoopOverlay` sólo reemplaza ítems que el cache ya tiene. Un paso recién agregado todavía no está en el cache, y sin el overlay el reordenar siguiente mandaría una lista sin él. `useStepOverlay` guarda los nuevos y los borrados (null) hasta que el cache trae el mismo objeto.
+→ modules/loops/client/useStepOverlay.ts
+
+## 2026-10-15 · En Hoy, con un contexto elegido, un loop sin pasos queda afuera
+El filtro responde "¿qué puedo hacer acá?", y un loop sin pasos no dice dónde se hace. La pantalla vacía sugiere desglosarlo con `p`.
+→ modules/loops/client/steps.ts (matchesContext)
+
+## 2026-10-15 · Toda vista con un modo que use números escucha con `first: true`, también Hoy
+Hoy sumó `f` + número y se quedó en la fase normal: el shell tomaba `f 3` como "pestaña 3" y las `x` siguientes cayeron en la vista Loops, donde el cursor salta al loop siguiente. Así se cerró un loop real en una prueba (restaurado a mano).
+→ modules/loops/client/Today.tsx
+
 ## 2026-10-15 · "Estancado" usa `last_activity_at`, no `updated_at`
 Mauro decidió que reprogramar no cuente como actividad. `updated_at` sigue siendo "cualquier cambio" porque lo usan el cache y la sync. La columna la mueven procesar, completar un paso y cerrar; reprogramar y asignar área no. La migración copia `updated_at` a mano porque el default `now()` dejaba todo "recién tocado".
 → modules/loops/server/domain.ts, packages/db/migrations/0001_unusual_mandroid.sql

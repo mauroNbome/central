@@ -1,22 +1,34 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { CaptureLoopInput, LoopHorizon, LoopStatus, ProcessDecision } from "../contract.ts";
 import {
+  addStep,
   captureLoop,
   completeLoop,
+  completeStep,
   dropLoop,
   fetchAreas,
+  fetchContexts,
   fetchLoops,
+  fetchSteps,
   processLoop,
+  removeStep,
+  reopenLoop,
+  reopenStep,
+  reorderSteps,
   rescheduleLoop,
   setLoopArea,
+  setStepContext,
   shelveLoop,
   type LoopDto,
+  type StepDto,
 } from "./api.ts";
 import type { LoopCall } from "./loopsView.ts";
 
 export const loopKeys = {
   all: ["loops"] as const,
   list: (status?: LoopStatus) => ["loops", "list", status ?? "all"] as const,
+  /** Adentro de `all`: un cambio de pasos refresca los loops (y al revés). */
+  steps: ["loops", "steps"] as const,
 };
 
 export function useLoops(status?: LoopStatus) {
@@ -30,6 +42,18 @@ export function useAreas() {
   return useQuery({ queryKey: areasKey, queryFn: fetchAreas, staleTime: Infinity });
 }
 
+/** Como las áreas: fijas por ahora. */
+const contextsKey = ["loops:contexts"] as const;
+
+export function useContexts() {
+  return useQuery({ queryKey: contextsKey, queryFn: fetchContexts, staleTime: Infinity });
+}
+
+/** Todos los pasos del usuario: alcanzan para Hoy, los contadores y el editor. */
+export function useSteps() {
+  return useQuery({ queryKey: loopKeys.steps, queryFn: fetchSteps });
+}
+
 /**
  * Refresca sólo cuando termina la última mutación en vuelo. Si refrescara
  * después de cada una, con varias decisiones seguidas el refetch traería
@@ -40,6 +64,13 @@ function settle(qc: QueryClient) {
     return qc.invalidateQueries({ queryKey: loopKeys.all });
   }
 }
+
+/**
+ * Fila única para completar, deshacer y cambiar pasos. Un "deshacer" rápido
+ * tiene que llegar después del "hecho" que deshace (si no, el servidor todavía
+ * no lo cerró y da 409), y un reordenar después del paso que se acaba de agregar.
+ */
+const serial = { id: "loops:serial" };
 
 /** Lo que el servidor va a devolver, armado en el cliente para mostrarlo ya. */
 function optimisticLoop(input: CaptureLoopInput): LoopDto {
@@ -109,13 +140,18 @@ export function useProcessLoop() {
   });
 }
 
+/** Cierra un loop sin pasos desde Hoy. `closed` va a todas las listas: sale de activos y entra a "Hecho hoy". */
 export function useCompleteLoop() {
   const qc = useQueryClient();
   return useMutation({
     mutationKey: loopKeys.all,
-    mutationFn: (loop: LoopDto) => completeLoop(loop.id),
-    onMutate: (loop) => removeOptimistically(qc, loopKeys.list("active"), loop),
-    onError: (_err, _loop, restore) => restore?.(),
+    scope: serial,
+    mutationFn: ({ loop }: { loop: LoopDto; closed: LoopDto }) => completeLoop(loop.id),
+    onMutate: async ({ closed }) => {
+      await qc.cancelQueries({ queryKey: loopKeys.all });
+      placeLoop(qc, closed);
+    },
+    onError: (_err, { loop }) => placeLoop(qc, loop),
     onSettled: () => settle(qc),
   });
 }
@@ -195,4 +231,133 @@ export function useDecideLoop() {
 
 export function useSetLoopArea() {
   return useLoopChange(({ loop, next }: { loop: LoopDto; next: LoopDto }) => setLoopArea(loop.id, next.areaId));
+}
+
+/** Pone (o reemplaza) pasos en el cache. Con los originales, es el rollback de esos solos. */
+function putSteps(qc: QueryClient, steps: readonly StepDto[]) {
+  const byId = new Map(steps.map((s) => [s.id, s]));
+  qc.setQueryData<StepDto[]>(loopKeys.steps, (old = []) => [
+    ...old.map((s) => byId.get(s.id) ?? s),
+    ...steps.filter((s) => !old.some((o) => o.id === s.id)),
+  ]);
+}
+
+function dropStep(qc: QueryClient, id: string) {
+  qc.setQueryData<StepDto[]>(loopKeys.steps, (old) => old?.filter((s) => s.id !== id));
+}
+
+/** Cambios de pasos de un loop, en la fila de `serial`. */
+export function useStepChanges(loopId: string) {
+  const qc = useQueryClient();
+  const base = { mutationKey: loopKeys.all, scope: serial, onSettled: () => settle(qc) };
+  const cancel = () => qc.cancelQueries({ queryKey: loopKeys.steps });
+
+  return {
+    add: useMutation({
+      ...base,
+      mutationFn: (step: StepDto) => addStep(loopId, { id: step.id, title: step.title, contextId: step.contextId }),
+      // El id es del cliente: reintentar no duplica.
+      retry: 3,
+      onMutate: async (step) => {
+        await cancel();
+        putSteps(qc, [step]);
+      },
+      onError: (_err, step) => dropStep(qc, step.id),
+    }),
+    reorder: useMutation({
+      ...base,
+      mutationFn: ({ next }: { before: StepDto[]; next: StepDto[] }) =>
+        reorderSteps(
+          loopId,
+          [...next].sort((a, b) => a.position - b.position).map((s) => s.id),
+        ),
+      onMutate: async ({ next }) => {
+        await cancel();
+        putSteps(qc, next);
+      },
+      onError: (_err, { before }) => putSteps(qc, before),
+    }),
+    setContext: useMutation({
+      ...base,
+      mutationFn: ({ next }: { step: StepDto; next: StepDto }) => setStepContext(loopId, next.id, next.contextId),
+      onMutate: async ({ next }) => {
+        await cancel();
+        putSteps(qc, [next]);
+      },
+      onError: (_err, { step }) => putSteps(qc, [step]),
+    }),
+    remove: useMutation({
+      ...base,
+      mutationFn: (step: StepDto) => removeStep(loopId, step.id),
+      onMutate: async (step) => {
+        await cancel();
+        dropStep(qc, step.id);
+      },
+      onError: (_err, step) => putSteps(qc, [step]),
+    }),
+  };
+}
+
+/**
+ * Completa un paso. Si era el último pendiente, `closed` es el loop cerrado y
+ * sale de las listas de abiertos en el acto.
+ */
+export function useCompleteStep() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: loopKeys.all,
+    scope: serial,
+    mutationFn: ({ step }: { loop: LoopDto; step: StepDto; next: StepDto; closed: LoopDto | null }) =>
+      completeStep(step.loopId, step.id),
+    onMutate: async ({ next, closed }) => {
+      await qc.cancelQueries({ queryKey: loopKeys.all });
+      putSteps(qc, [next]);
+      if (closed) placeLoop(qc, closed);
+    },
+    onError: (_err, { loop, step, closed }) => {
+      putSteps(qc, [step]);
+      if (closed) placeLoop(qc, loop);
+    },
+    onSettled: () => settle(qc),
+  });
+}
+
+/**
+ * Deshace completar un paso. `reopened` es el loop como estaba antes de
+ * cerrarse (si completar el paso lo había cerrado): vuelve con su horizonte.
+ */
+export function useReopenStep() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: loopKeys.all,
+    scope: serial,
+    mutationFn: ({ next, reopened }: { loop: LoopDto; step: StepDto; next: StepDto; reopened: LoopDto | null }) =>
+      reopenStep(next.loopId, next.id, reopened?.horizon ?? null),
+    onMutate: async ({ next, reopened }) => {
+      await qc.cancelQueries({ queryKey: loopKeys.all });
+      putSteps(qc, [next]);
+      if (reopened) placeLoop(qc, reopened);
+    },
+    onError: (_err, { loop, step, reopened }) => {
+      putSteps(qc, [step]);
+      if (reopened) placeLoop(qc, loop);
+    },
+    onSettled: () => settle(qc),
+  });
+}
+
+/** Deshace cerrar un loop sin pasos: `next` es el loop como estaba, con su horizonte. */
+export function useReopenLoop() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: loopKeys.all,
+    scope: serial,
+    mutationFn: ({ next }: { loop: LoopDto; next: LoopDto }) => reopenLoop(next.id, next.horizon),
+    onMutate: async ({ next }) => {
+      await qc.cancelQueries({ queryKey: loopKeys.all });
+      placeLoop(qc, next);
+    },
+    onError: (_err, { loop }) => placeLoop(qc, loop),
+    onSettled: () => settle(qc),
+  });
 }

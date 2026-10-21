@@ -1,8 +1,8 @@
 /** Acceso a las tablas loops.*. Sin reglas de negocio: eso vive en domain.ts. */
 import type { Db } from "@hub/db";
 import { and, asc, eq } from "drizzle-orm";
-import type { Area, Loop, LoopStatus } from "../contract.ts";
-import { areas, contexts, loops } from "./schema.ts";
+import type { Area, Context, Loop, LoopStatus, Step } from "../contract.ts";
+import { areas, contexts, loops, steps } from "./schema.ts";
 
 /** Db o transacción: los dos exponen la misma API de consultas. */
 export type Executor = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -48,6 +48,45 @@ export async function updateLoop(db: Executor, loop: Loop): Promise<void> {
     .update(loops)
     .set(fields)
     .where(and(eq(loops.userId, userId), eq(loops.id, id)));
+}
+
+export async function listContexts(db: Executor, userId: string): Promise<Context[]> {
+  return db.select().from(contexts).where(eq(contexts.userId, userId)).orderBy(asc(contexts.position));
+}
+
+export async function findContext(db: Executor, userId: string, id: string): Promise<Context | null> {
+  const [row] = await db
+    .select()
+    .from(contexts)
+    .where(and(eq(contexts.userId, userId), eq(contexts.id, id)));
+  return row ?? null;
+}
+
+/** Pasos del usuario, o de un loop si se pasa `loopId`. Ordenados por loop y posición. */
+export async function listSteps(db: Executor, userId: string, loopId?: string): Promise<Step[]> {
+  return db
+    .select()
+    .from(steps)
+    .where(loopId ? and(eq(steps.userId, userId), eq(steps.loopId, loopId)) : eq(steps.userId, userId))
+    .orderBy(asc(steps.loopId), asc(steps.position));
+}
+
+/** Inserta si el id no existe. Devuelve false si ya estaba (reintento, o id ajeno). */
+export async function insertStepIfAbsent(db: Executor, step: Step): Promise<boolean> {
+  const inserted = await db.insert(steps).values(step).onConflictDoNothing({ target: steps.id }).returning({ id: steps.id });
+  return inserted.length > 0;
+}
+
+export async function updateStep(db: Executor, step: Step): Promise<void> {
+  const { id, userId, ...fields } = step;
+  await db
+    .update(steps)
+    .set(fields)
+    .where(and(eq(steps.userId, userId), eq(steps.id, id)));
+}
+
+export async function deleteStep(db: Executor, userId: string, id: string): Promise<void> {
+  await db.delete(steps).where(and(eq(steps.userId, userId), eq(steps.id, id)));
 }
 
 const DEFAULT_AREAS = [

@@ -234,6 +234,125 @@ describe("áreas", () => {
   });
 });
 
+describe("pasos", () => {
+  type StepJson = { id: string; title: string; position: number; status: string; contextId: string | null };
+
+  async function addSteps(post: ReturnType<typeof setup>["post"], loopId: string, titles: string[]) {
+    const ids: string[] = [];
+    for (const title of titles) {
+      const id = randomUUID();
+      const res = await post(`/loops/${loopId}/steps`, { id, title });
+      expect(res.status).toBe(201);
+      ids.push(id);
+    }
+    return ids;
+  }
+
+  it("desglosa un loop del inbox: agrega al final, sin duplicar reintentos, y mueve la última actividad", async () => {
+    const { post, get } = setup();
+    const loopId = randomUUID();
+    await post("/loops", { id: loopId, rawText: "Cambiar filtro de aire", source: "web" });
+    const before = ((await (await get("/loops")).json()) as { lastActivityAt: string }[])[0]!.lastActivityAt;
+
+    const [first] = await addSteps(post, loopId, ["Medir el filtro", "Comprar filtro"]);
+    const retry = await post(`/loops/${loopId}/steps`, { id: first, title: "Medir el filtro" });
+
+    expect(retry.status).toBe(200);
+    const steps = (await (await get("/loops/steps")).json()) as StepJson[];
+    expect(steps.map((s) => [s.title, s.position])).toEqual([
+      ["Medir el filtro", 0],
+      ["Comprar filtro", 1],
+    ]);
+    const loop = ((await (await get("/loops")).json()) as { status: string; lastActivityAt: string }[])[0]!;
+    expect(loop.status).toBe("inbox");
+    expect(loop.lastActivityAt > before).toBe(true);
+  });
+
+  it("reordena con la lista completa y da 409 si la lista no coincide", async () => {
+    const { post } = setup();
+    const loopId = await activeLoop(post);
+    const [a, b, c] = await addSteps(post, loopId, ["a", "b", "c"]);
+
+    const res = await post(`/loops/${loopId}/steps/reorder`, { stepIds: [c, a, b] });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as StepJson[]).map((s) => s.title)).toEqual(["c", "a", "b"]);
+    expect((await post(`/loops/${loopId}/steps/reorder`, { stepIds: [a, b] })).status).toBe(409);
+  });
+
+  it("completar un paso promueve el siguiente y el último cierra el loop", async () => {
+    const { post, bus } = setup();
+    const events = vi.fn();
+    bus.on("step.completed", () => events("step.completed"));
+    bus.on("loop.completed", () => events("loop.completed"));
+    const loopId = await activeLoop(post);
+    const [a, b] = await addSteps(post, loopId, ["a", "b"]);
+
+    const first = await post(`/loops/${loopId}/steps/${a}/complete`, {});
+    expect(await first.json()).toMatchObject({ loop: { status: "active" }, step: { id: a, status: "done" } });
+    const last = await post(`/loops/${loopId}/steps/${b}/complete`, {});
+    expect(await last.json()).toMatchObject({ loop: { status: "done" }, step: { id: b, status: "done" } });
+    expect(events.mock.calls.flat()).toEqual(["step.completed", "step.completed", "loop.completed"]);
+    expect((await post(`/loops/${loopId}/steps/${a}/complete`, {})).status).toBe(409);
+  });
+
+  it("deshacer el último paso reabre el loop con su horizonte", async () => {
+    const { post } = setup();
+    const loopId = await activeLoop(post);
+    await post(`/loops/${loopId}/reschedule`, { horizon: "week" });
+    const [a] = await addSteps(post, loopId, ["a"]);
+    await post(`/loops/${loopId}/steps/${a}/complete`, {});
+
+    const res = await post(`/loops/${loopId}/steps/${a}/reopen`, { horizon: "week" });
+    expect(await res.json()).toMatchObject({
+      loop: { status: "active", horizon: "week", completedAt: null },
+      step: { id: a, status: "pending", completedAt: null },
+    });
+    expect((await post(`/loops/${loopId}/steps/${a}/reopen`, {})).status).toBe(409);
+  });
+
+  it("deshacer el cierre de un loop sin pasos lo vuelve a activo", async () => {
+    const { post } = setup();
+    const id = await activeLoop(post);
+    await post(`/loops/${id}/complete`, {});
+
+    expect(await (await post(`/loops/${id}/reopen`, {})).json()).toMatchObject({ status: "active", horizon: "today" });
+    expect((await post(`/loops/${id}/reopen`, {})).status).toBe(409);
+  });
+
+  it("asigna contexto, no acepta uno ajeno y borra pasos pendientes", async () => {
+    const { post, get, app, userId } = setup();
+    const other = setup();
+    await seedDefaults(db, userId);
+    await seedDefaults(db, other.userId);
+    const [ctx] = (await (await get("/loops/contexts")).json()) as { id: string; name: string }[];
+    const [foreign] = (await (await other.get("/loops/contexts")).json()) as { id: string }[];
+    const loopId = await activeLoop(post);
+    const [a, b] = await addSteps(post, loopId, ["a", "b"]);
+
+    const res = await post(`/loops/${loopId}/steps/${a}/context`, { contextId: ctx!.id });
+    expect(await res.json()).toMatchObject({ id: a, contextId: ctx!.id });
+    expect((await post(`/loops/${loopId}/steps/${a}/context`, { contextId: foreign!.id })).status).toBe(404);
+
+    const del = await app.request(`/api/loops/${loopId}/steps/${b}`, { method: "DELETE" });
+    expect(del.status).toBe(204);
+    expect(((await (await get("/loops/steps")).json()) as StepJson[]).map((s) => s.id)).toEqual([a]);
+  });
+
+  it("no deja tocar pasos de un loop de otro usuario", async () => {
+    const a = setup();
+    const b = setup();
+    const loopId = await activeLoop(a.post);
+    const [stepId] = await addSteps(a.post, loopId, ["a"]);
+
+    expect((await b.post(`/loops/${loopId}/steps`, { id: randomUUID(), title: "x" })).status).toBe(404);
+    expect((await b.post(`/loops/${loopId}/steps/${stepId}/complete`, {})).status).toBe(404);
+    // Reusar el id de un paso ajeno en un loop propio tampoco lo revela.
+    const own = await activeLoop(b.post);
+    expect((await b.post(`/loops/${own}/steps`, { id: stepId, title: "x" })).status).toBe(404);
+    expect(await (await b.get("/loops/steps")).json()).toEqual([]);
+  });
+});
+
 describe("seedDefaults", () => {
   it("es idempotente", async () => {
     const userId = randomUUID();

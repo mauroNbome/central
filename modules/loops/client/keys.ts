@@ -16,6 +16,9 @@ export const decisionKeys = [
 
 export type DecisionKey = (typeof decisionKeys)[number];
 
+/** Abre el editor de pasos del loop bajo el cursor (en Inbox, Hoy y Loops). */
+export const breakdownKey = { key: "p", label: "Desglosar" } as const;
+
 /** Las mismas teclas de horizonte que en el inbox, para reprogramar desde Hoy. */
 export const horizonKeys = [
   { key: "h", label: "Hoy", horizon: "today" },
@@ -42,31 +45,47 @@ function moveForKey(key: string): Move | null {
   return null;
 }
 
-export type InboxAction = Move | { type: "decide"; choice: DecisionKey };
+type Breakdown = { type: "breakdown" };
+
+export type InboxAction = Move | Breakdown | { type: "decide"; choice: DecisionKey };
 
 export function inboxActionForKey(key: string): InboxAction | null {
   const move = moveForKey(key);
   if (move) return move;
+  if (key.toLowerCase() === breakdownKey.key) return { type: "breakdown" };
   // Bloq Mayús no debería romper el procesado.
   const choice = decisionKeys.find((d) => d.key === key.toLowerCase());
   return choice ? { type: "decide", choice } : null;
 }
 
-export type TodayMode = "normal" | "reschedule";
+export type TodayMode = "normal" | "reschedule" | "filter";
+
+/** Contextos por posición: `1` es el primero; `0` es "todos" al filtrar y "sin contexto" al asignar. */
+type ContextSlot = number | null;
 
 export type TodayAction =
   | Move
+  | Breakdown
   | { type: "complete" }
   | { type: "startReschedule" }
   | { type: "reschedule"; choice: HorizonKey }
+  | { type: "startFilter" }
+  | { type: "filterContext"; slot: ContextSlot }
   | { type: "cancel" };
 
-/** `r` abre un segundo paso: la próxima tecla elige el horizonte nuevo. */
+/**
+ * `r` y `f` abren un segundo paso: la próxima tecla elige el horizonte nuevo o
+ * el contexto (`f` + número, como el filtro de área en la vista Loops).
+ */
 export function todayActionForKey(key: string, mode: TodayMode): TodayAction | null {
   if (mode === "reschedule") {
     const choice = horizonKeys.find((h) => h.key === key.toLowerCase());
     // Cualquier otra tecla cancela, para no quedar atrapado en el modo.
     return choice ? { type: "reschedule", choice } : { type: "cancel" };
+  }
+  if (mode === "filter") {
+    const slot = slotForKey(key);
+    return slot === undefined ? { type: "cancel" } : { type: "filterContext", slot };
   }
   const move = moveForKey(key);
   if (move) return move;
@@ -75,6 +94,10 @@ export function todayActionForKey(key: string, mode: TodayMode): TodayAction | n
       return { type: "complete" };
     case "r":
       return { type: "startReschedule" };
+    case "f":
+      return { type: "startFilter" };
+    case breakdownKey.key:
+      return { type: "breakdown" };
   }
   return null;
 }
@@ -97,6 +120,7 @@ type AreaSlot = number | null;
 
 export type LoopsAction =
   | Move
+  | Breakdown
   | { type: "decide"; choice: DecisionKey }
   | { type: "startArea" }
   | { type: "area"; slot: AreaSlot }
@@ -105,7 +129,8 @@ export type LoopsAction =
   | { type: "filterArea"; slot: AreaSlot }
   | { type: "cancel" };
 
-function areaSlotForKey(key: string): AreaSlot | undefined {
+/** Número a posición en una lista (áreas, contextos): `1` es la primera, `0` es null. */
+function slotForKey(key: string): number | null | undefined {
   if (!/^[0-9]$/.test(key)) return undefined;
   return key === "0" ? null : Number(key) - 1;
 }
@@ -115,7 +140,7 @@ function areaSlotForKey(key: string): AreaSlot | undefined {
  * `e` (área) y `f` (filtro) abren un segundo paso, como `r` en Hoy.
  */
 export function loopsActionForKey(key: string, mode: LoopsMode): LoopsAction | null {
-  const slot = areaSlotForKey(key);
+  const slot = slotForKey(key);
   if (mode === "area") return slot === undefined ? { type: "cancel" } : { type: "area", slot };
   if (mode === "filter") {
     if (slot !== undefined) return { type: "filterArea", slot };
@@ -129,13 +154,62 @@ export function loopsActionForKey(key: string, mode: LoopsMode): LoopsAction | n
       return { type: "startArea" };
     case "f":
       return { type: "startFilter" };
+    case breakdownKey.key:
+      return { type: "breakdown" };
   }
   const choice = decisionKeys.find((d) => d.key === key.toLowerCase());
   return choice ? { type: "decide", choice } : null;
 }
 
+export type EditorMode = "normal" | "context";
+
+export type EditorAction =
+  | Move
+  | { type: "reorder"; delta: 1 | -1 }
+  | { type: "insert" }
+  | { type: "complete" }
+  | { type: "remove" }
+  | { type: "startContext" }
+  | { type: "context"; slot: ContextSlot }
+  | { type: "close" }
+  | { type: "cancel" };
+
+/**
+ * Teclas del editor de pasos, cuando el foco no está en el input. Estilo vim:
+ * j/k mueven, Shift+J/K reordenan (por Shift y no por mayúscula, así Bloq Mayús
+ * no reordena sin querer), `i`/`o`/Enter vuelven a escribir, Esc cierra.
+ */
+export function editorActionForKey(e: { key: string; shiftKey: boolean }, mode: EditorMode): EditorAction | null {
+  if (mode === "context") {
+    const slot = slotForKey(e.key);
+    return slot === undefined ? { type: "cancel" } : { type: "context", slot };
+  }
+  if (e.key === "Escape") return { type: "close" };
+  if (e.key === "Enter") return { type: "insert" };
+  // Con Shift, `e.key` llega en mayúscula ("J"); las flechas no cambian.
+  const move = moveForKey(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+  if (move) return e.shiftKey ? { type: "reorder", delta: move.delta } : move;
+  switch (e.key.toLowerCase()) {
+    case "i":
+    case "o":
+      return { type: "insert" };
+    case "x":
+      return { type: "complete" };
+    case "d":
+      return { type: "remove" };
+    case "c":
+      return { type: "startContext" };
+  }
+  return null;
+}
+
 export function tabForKey(key: string): Tab | null {
   return tabKeys.find((t) => t.key === key)?.tab ?? null;
+}
+
+/** `u` deshace lo del último aviso, como en vim. */
+export function isUndoKey(key: string): boolean {
+  return key.toLowerCase() === "u";
 }
 
 export function isCaptureKey(key: string): boolean {

@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { CaptureInput } from "./CaptureInput.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { Loops } from "./Loops.tsx";
-import { isCaptureKey, tabForKey, tabKeys, type Tab } from "./keys.ts";
+import { isCaptureKey, isUndoKey, tabForKey, tabKeys, type Tab } from "./keys.ts";
 import { NoticeBar, useNotice } from "./Notice.tsx";
 import { useLoops } from "./queries.ts";
 import { Today } from "./Today.tsx";
@@ -11,7 +11,7 @@ import { useHotkeys } from "./useHotkeys.ts";
 
 export function LoopsHome() {
   const captureRef = useRef<HTMLInputElement>(null);
-  const [notice, showNotice] = useNotice();
+  const [notice, showNotice, undo] = useNotice();
   const [tab, setTab] = useState<Tab>("inbox");
 
   // Las dos listas se cargan siempre: alimentan los contadores y cambiar de pestaña es instantáneo.
@@ -24,6 +24,7 @@ export function LoopsHome() {
   };
 
   useHotkeys((e) => {
+    if (isUndoKey(e.key)) return !e.repeat && undo();
     if (isCaptureKey(e.key)) {
       captureRef.current?.focus();
       return true;
@@ -66,7 +67,7 @@ export function LoopsHome() {
         {tab === "loops" && <Loops onNotice={showNotice} />}
       </section>
 
-      <NoticeBar notice={notice} />
+      <NoticeBar notice={notice} onUndo={undo} />
     </main>
   );
 }

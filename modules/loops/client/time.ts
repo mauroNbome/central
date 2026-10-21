@@ -17,3 +17,15 @@ export function timeAgo(iso: string, now = Date.now()): string {
   }
   return "ahora";
 }
+
+const clock = new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit" });
+
+/** "09:40", en la hora local. */
+export function clockTime(iso: string): string {
+  return clock.format(new Date(iso));
+}
+
+/** Medianoche local de `now`: "hoy" empieza ahí. */
+export function startOfDay(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}

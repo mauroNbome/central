@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Loop, Step } from "../contract.ts";
 import {
+  addStep,
   captureLoop,
   completeLoop,
   completeStep,
@@ -9,14 +10,21 @@ import {
   isStale,
   nextAction,
   processLoop,
+  removeStep,
+  reopenLoop,
+  reopenStep,
+  reorderSteps,
   rescheduleLoop,
   setLoopArea,
+  setStepContext,
   shelveLoop,
 } from "./domain.ts";
 
 const USER = "00000000-0000-4000-8000-000000000001";
 const LOOP_ID = "00000000-0000-4000-8000-0000000000aa";
 const AREA_ID = "00000000-0000-4000-8000-0000000000bb";
+const STEP_ID = "00000000-0000-4000-8000-0000000000cc";
+const CONTEXT_ID = "00000000-0000-4000-8000-0000000000dd";
 const T0 = new Date("2026-10-01T10:00:00Z");
 const T1 = new Date("2026-10-02T10:00:00Z");
 
@@ -151,6 +159,92 @@ describe("completeStep", () => {
     expect(() => completeStep(makeLoop(), steps, "a", T1)).toThrow(DomainError);
     expect(() => completeStep(makeLoop(), steps, "x", T1)).toThrow(DomainError);
     expect(() => completeStep(makeLoop({ status: "inbox", horizon: null }), [makeStep("b", 1)], "b", T1)).toThrow(DomainError);
+  });
+});
+
+describe("addStep", () => {
+  it("agrega al final, también desde el inbox, y cuenta como actividad", () => {
+    const loop = makeLoop({ status: "inbox", horizon: null });
+    const steps = [makeStep("a", 0), makeStep("b", 4, { status: "done", completedAt: T0 })];
+    const result = addStep(loop, steps, { id: STEP_ID, title: "  Comprar filtro ", contextId: CONTEXT_ID }, T1);
+
+    expect(result.step).toMatchObject({ id: STEP_ID, loopId: LOOP_ID, title: "Comprar filtro", position: 5, status: "pending" });
+    expect(result.loop).toMatchObject({ status: "inbox", updatedAt: T1, lastActivityAt: T1 });
+    expect(result.events).toEqual([]);
+  });
+
+  it("el primer paso va en la posición 0", () => {
+    expect(addStep(makeLoop(), [], { id: STEP_ID, title: "Medir", contextId: null }, T1).step.position).toBe(0);
+  });
+
+  it("rechaza loops cerrados", () => {
+    const loop = makeLoop({ status: "done", horizon: null });
+    expect(() => addStep(loop, [], { id: STEP_ID, title: "x", contextId: null }, T1)).toThrow(DomainError);
+  });
+});
+
+describe("reorderSteps", () => {
+  const steps = [makeStep("a", 0), makeStep("b", 1, { status: "done" }), makeStep("c", 2)];
+
+  it("renumera en el orden pedido sin contar como actividad", () => {
+    const result = reorderSteps(makeLoop(), steps, ["c", "a", "b"], T1);
+    expect(result.steps.map((s) => [s.id, s.position])).toEqual([
+      ["c", 0],
+      ["a", 1],
+      ["b", 2],
+    ]);
+    expect(result.loop).toMatchObject({ updatedAt: T1, lastActivityAt: T0 });
+  });
+
+  it("rechaza listas que no coinciden con los pasos del loop", () => {
+    expect(() => reorderSteps(makeLoop(), steps, ["a", "c"], T1)).toThrow(DomainError);
+    expect(() => reorderSteps(makeLoop(), steps, ["a", "a", "c"], T1)).toThrow(DomainError);
+    expect(() => reorderSteps(makeLoop(), steps, ["a", "b", "z"], T1)).toThrow(DomainError);
+  });
+});
+
+describe("setStepContext y removeStep", () => {
+  it("cambian un paso pendiente sin contar como actividad", () => {
+    const steps = [makeStep("a", 0)];
+    const withContext = setStepContext(makeLoop(), steps, "a", CONTEXT_ID, T1);
+    expect(withContext.step.contextId).toBe(CONTEXT_ID);
+    expect(withContext.loop.lastActivityAt).toEqual(T0);
+    expect(removeStep(makeLoop(), steps, "a", T1).step.id).toBe("a");
+  });
+
+  it("no tocan pasos hechos ni loops cerrados", () => {
+    const done = [makeStep("a", 0, { status: "done", completedAt: T0 })];
+    expect(() => setStepContext(makeLoop(), done, "a", null, T1)).toThrow(DomainError);
+    expect(() => removeStep(makeLoop(), done, "a", T1)).toThrow(DomainError);
+    const dropped = makeLoop({ status: "dropped", horizon: null });
+    expect(() => removeStep(dropped, [makeStep("b", 0)], "b", T1)).toThrow(DomainError);
+  });
+});
+
+describe("reopenStep y reopenLoop", () => {
+  it("vuelve un paso a pendiente sin tocar la última actividad", () => {
+    const steps = [makeStep("a", 0, { status: "done", completedAt: T0 }), makeStep("b", 1)];
+    const result = reopenStep(makeLoop(), steps, "a", undefined, T1);
+    expect(result.step).toMatchObject({ status: "pending", completedAt: null });
+    expect(result.loop).toMatchObject({ status: "active", horizon: "today", updatedAt: T1, lastActivityAt: T0 });
+  });
+
+  it("si completar el paso había cerrado el loop, lo reabre con el horizonte que tenía", () => {
+    const closed = makeLoop({ status: "done", horizon: null, completedAt: T0 });
+    const steps = [makeStep("a", 0, { status: "done", completedAt: T0 })];
+    expect(reopenStep(closed, steps, "a", "week", T1).loop).toMatchObject({
+      status: "active",
+      horizon: "week",
+      completedAt: null,
+    });
+    expect(reopenLoop(closed, undefined, T1).loop).toMatchObject({ status: "active", horizon: "today" });
+  });
+
+  it("rechaza pasos pendientes, loops descartados y loops que no están cerrados", () => {
+    expect(() => reopenStep(makeLoop(), [makeStep("a", 0)], "a", undefined, T1)).toThrow(DomainError);
+    const dropped = makeLoop({ status: "dropped", horizon: null });
+    expect(() => reopenStep(dropped, [makeStep("a", 0, { status: "done" })], "a", undefined, T1)).toThrow(DomainError);
+    expect(() => reopenLoop(makeLoop(), "today", T1)).toThrow(DomainError);
   });
 });
 

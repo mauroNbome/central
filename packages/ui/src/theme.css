@@ -13,9 +13,36 @@
   --color-accent: var(--hub-accent);
   --color-accent-soft: var(--hub-accent-soft);
   --color-danger: var(--hub-danger);
+  --color-success: var(--hub-success);
+  --color-success-soft: var(--hub-success-soft);
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+}
+
+/* Completar algo: la fila se tacha y se va; lo hecho entra con un destello. */
+@theme {
+  --animate-done-out: done-out 700ms ease-in forwards;
+  --animate-done-in: done-in 1200ms ease-out;
+
+  @keyframes done-out {
+    0%,
+    60% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes done-in {
+    0% {
+      background-color: var(--hub-success-soft);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
 }
 
 :root {
@@ -29,6 +56,8 @@
   --hub-accent: oklch(55% 0.18 265);
   --hub-accent-soft: oklch(95% 0.03 265);
   --hub-danger: oklch(55% 0.2 25);
+  --hub-success: oklch(55% 0.14 150);
+  --hub-success-soft: oklch(94% 0.05 150);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,6 +70,8 @@
     --hub-accent: oklch(72% 0.14 265);
     --hub-accent-soft: oklch(28% 0.06 265);
     --hub-danger: oklch(70% 0.17 25);
+    --hub-success: oklch(72% 0.14 150);
+    --hub-success-soft: oklch(30% 0.06 150);
   }
 }
 

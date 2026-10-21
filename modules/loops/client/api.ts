@@ -1,5 +1,5 @@
 import { hc, type InferResponseType } from "hono/client";
-import type { CaptureLoopInput, LoopHorizon, LoopStatus, ProcessDecision } from "../contract.ts";
+import type { CaptureLoopInput, CreateStepInput, LoopHorizon, LoopStatus, ProcessDecision } from "../contract.ts";
 import type { LoopsRoutes } from "../server/index.ts";
 
 /** Cliente RPC tipado con las rutas del propio módulo: el shell no lo conoce. */
@@ -46,6 +46,12 @@ export async function completeLoop(id: string): Promise<LoopDto> {
   return res.json();
 }
 
+export async function reopenLoop(id: string, horizon: LoopHorizon | null): Promise<LoopDto> {
+  const res = await api[":id"].reopen.$post({ param: { id }, json: horizon ? { horizon } : {} });
+  if (!res.ok) return fail(res);
+  return res.json();
+}
+
 export async function rescheduleLoop(id: string, horizon: LoopHorizon): Promise<LoopDto> {
   const res = await api[":id"].reschedule.$post({ param: { id }, json: { horizon } });
   if (!res.ok) return fail(res);
@@ -76,4 +82,62 @@ export async function setLoopArea(id: string, areaId: string | null): Promise<Lo
   const res = await api[":id"].area.$post({ param: { id }, json: { areaId } });
   if (!res.ok) return fail(res);
   return res.json();
+}
+
+export type ContextDto = InferResponseType<typeof api.contexts.$get, 200>[number];
+
+export async function fetchContexts(): Promise<ContextDto[]> {
+  const res = await api.contexts.$get();
+  if (!res.ok) return fail(res);
+  return res.json();
+}
+
+export type StepDto = InferResponseType<typeof api.steps.$get, 200>[number];
+
+export async function fetchSteps(): Promise<StepDto[]> {
+  const res = await api.steps.$get();
+  if (!res.ok) return fail(res);
+  return res.json();
+}
+
+export async function addStep(loopId: string, input: CreateStepInput): Promise<StepDto> {
+  const res = await api[":id"].steps.$post({ param: { id: loopId }, json: input });
+  if (!res.ok) return fail(res);
+  return res.json();
+}
+
+export async function reorderSteps(loopId: string, stepIds: string[]): Promise<StepDto[]> {
+  const res = await api[":id"].steps.reorder.$post({ param: { id: loopId }, json: { stepIds } });
+  if (!res.ok) return fail(res);
+  return res.json();
+}
+
+export async function completeStep(loopId: string, stepId: string): Promise<{ loop: LoopDto; step: StepDto }> {
+  const res = await api[":id"].steps[":stepId"].complete.$post({ param: { id: loopId, stepId } });
+  if (!res.ok) return fail(res);
+  return res.json();
+}
+
+export async function reopenStep(
+  loopId: string,
+  stepId: string,
+  horizon: LoopHorizon | null,
+): Promise<{ loop: LoopDto; step: StepDto }> {
+  const res = await api[":id"].steps[":stepId"].reopen.$post({
+    param: { id: loopId, stepId },
+    json: horizon ? { horizon } : {},
+  });
+  if (!res.ok) return fail(res);
+  return res.json();
+}
+
+export async function setStepContext(loopId: string, stepId: string, contextId: string | null): Promise<StepDto> {
+  const res = await api[":id"].steps[":stepId"].context.$post({ param: { id: loopId, stepId }, json: { contextId } });
+  if (!res.ok) return fail(res);
+  return res.json();
+}
+
+export async function removeStep(loopId: string, stepId: string): Promise<void> {
+  const res = await api[":id"].steps[":stepId"].$delete({ param: { id: loopId, stepId } });
+  if (!res.ok) return fail(res);
 }

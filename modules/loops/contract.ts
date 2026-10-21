@@ -42,6 +42,15 @@ export const area = z.object({
 });
 export type Area = z.infer<typeof area>;
 
+export const context = z.object({
+  id: z.uuid(),
+  userId: z.uuid(),
+  name: z.string(),
+  icon: z.string(),
+  position: z.number().int(),
+});
+export type Context = z.infer<typeof context>;
+
 export const step = z.object({
   id: z.uuid(),
   userId: z.uuid(),
@@ -75,6 +84,32 @@ export const captureLoopInput = z.object({
   source: loopSource,
 });
 export type CaptureLoopInput = z.infer<typeof captureLoopInput>;
+
+/**
+ * Paso nuevo, al final del loop. Como en la captura, el id es del cliente: un
+ * reintento no duplica el paso.
+ */
+export const createStepInput = z.object({
+  id: z.uuid(),
+  title: z.string().trim().min(1),
+  contextId: z.uuid().nullable().default(null),
+});
+export type CreateStepInput = z.infer<typeof createStepInput>;
+
+/** Orden nuevo: todos los pasos del loop (pendientes y hechos), cada uno una vez. */
+export const reorderStepsInput = z.object({
+  stepIds: z.array(z.uuid()).min(1),
+});
+export type ReorderStepsInput = z.infer<typeof reorderStepsInput>;
+
+/**
+ * Deshacer un "hecho". Si al completar se cerró el loop, vuelve a activo con
+ * este horizonte (al cerrar se pierde); sin horizonte, vuelve a Hoy.
+ */
+export const reopenInput = z.object({
+  horizon: loopHorizon.optional(),
+});
+export type ReopenInput = z.infer<typeof reopenInput>;
 
 /** Próxima acción: el primer paso pendiente, o el loop mismo si no tiene pasos. */
 export type NextAction =
