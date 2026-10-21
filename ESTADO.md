@@ -21,9 +21,9 @@ de Hoy. Probado en headless y aprobado por Mauro; falta su feedback de uso diari
 |---|---|
 | Monorepo inicializado (estructura de `CLAUDE.md`) | ✅ |
 | Captura rápida web + PWA, offline, atajo de teclado | 🟡 web lista (`c` o `/` enfoca, Enter guarda, reintenta 3 veces); falta cola offline en IndexedDB y PWA |
-| Inbox con procesado por teclado | ✅ cursor (`j`/`k`), `h` `s` `m` `a` `x` `d` validados por Mauro; `p` desglosa (falta que lo pruebe) |
+| Inbox con procesado por teclado | ✅ cursor (`j`/`k`), `h` `s` `m` `a` `x` `d` validados por Mauro; `p` desglosa |
 | Editor de pasos: agregar, reordenar, contexto | 🟡 inline bajo la fila, con `p` en Inbox, Hoy y Loops. Abre escribiendo (Enter agrega); Esc pasa a ordenar: `j`/`k`, Shift+`J`/`K` reordena, `c` + `1`–`4` contexto (`0` lo quita), `x` completa (sólo activos), `d` borra (sólo pendientes), `i`/`o`/Enter vuelve a escribir, Esc cierra. Falta: editar el título de un paso |
-| Vista Hoy: próximas acciones + filtro por contexto | 🟡 cada fila es el primer paso pendiente (el loop abajo, chico) o el loop mismo si no tiene pasos. `f` + número o los chips filtran por contexto; un loop sin pasos queda afuera del filtro. Al completar, la fila se tacha y se desvanece en su lugar (~0,7 s) y lo hecho entra a **"Hecho hoy"** (abajo, con contador y hora; `x` ahí reabre si se llegó con `j`/`k` o clic). Falta que Mauro lo pruebe |
+| Vista Hoy: próximas acciones + filtro por contexto | 🟡 cada fila es el primer paso pendiente (el loop abajo, chico) o el loop mismo si no tiene pasos. `f` + número o los chips filtran por contexto; un loop sin pasos queda afuera del filtro. Al completar, la fila se tacha y se desvanece en su lugar (~0,7 s) y lo hecho entra a **"Hecho hoy"** (abajo, con contador y hora; `x` ahí reabre si se llegó con `j`/`k` o clic) |
 | Completar paso promueve el siguiente; el último cierra el loop | 🟡 `x` en Hoy o en el editor; en el editor el cursor pasa al próximo pendiente. Deshacer: `u` o el botón del aviso (también para un loop sin pasos cerrado desde Hoy, y reabre el loop con su horizonte si se había cerrado), y `x` sobre un paso hecho en el editor lo vuelve a pendiente. Probado en headless |
 | Vista Loops filtrable por estado y área | ✅ validada por Mauro. Secciones Inbox / Hoy / Esta semana / Más adelante / Algún día / Cerrados (plegados). Las teclas del inbox re-deciden cualquier loop abierto; `e` + `1`–`4` asigna área (`0` la quita); `f` + letra filtra estado (`t` `i` `e` `a` `c`) y `f` + número, área. Los cerrados son de solo lectura |
 
@@ -51,6 +51,7 @@ Cambio de schema: editar `modules/<m>/server/schema.ts` → `pnpm db:generate` �
    - Deshacer cubre completar (pasos y loops de Hoy), no las decisiones del inbox ni de la vista Loops.
    - "Hecho hoy" incluye lo cerrado con `x` desde el inbox o la vista Loops, y respeta el filtro por contexto (sólo pasos de ese contexto).
    - Reabrir desde "Hecho hoy" un loop ya cerrado lo vuelve a Hoy (el horizonte que tenía se pierde al cerrar).
+   - Sin respuesta todavía: al completar un paso en Hoy, ¿el cursor tiene que saltar al loop siguiente? Hoy se queda en el mismo loop, que muestra su próximo paso.
 2. Cola offline en IndexedDB + PWA. Hoy, sin red la captura queda en pausa en memoria y se pierde si se recarga.
 3. Cuando haya edición de título o texto (del loop o de un paso): tiene que mover `lastActivityAt`, porque editar cuenta como actividad.
 4. Detalles de la vista Loops que Mauro no pidió, para cuando moleste alguno: en móvil los chips ocupan 4 líneas, el área se ve solo como texto en la fila, no hay filtro "sin área".
@@ -75,6 +76,5 @@ Cambio de schema: editar `modules/<m>/server/schema.ts` → `pnpm db:generate` �
 - **Probar teclas destructivas (`x`, `d`) en headless, sólo con la vista aislada.** Antes, filtrá para que únicamente queden loops `[prueba]` (en Hoy: pasos de prueba en un contexto y `f` + ese número; los loops reales sin pasos no aparecen) y chequeá la pestaña activa (`nav button[aria-current=page]`). Una tecla que cae en otra vista puede cerrar un loop real.
 - Vite (`pnpm dev`) cachea un import que falló: si un archivo se importa antes de crearlo, sigue dando 500 aunque ya exista. `touch apps/web/vite.config.ts` reinicia Vite sin matar el `pnpm dev` (que puede ser de Mauro).
 - La app enfoca el input de captura al cargar: en Playwright, hacer clic en el fondo antes de mandar teclas, o se escriben en el input.
-- Hoy usa `useLoops()` (todos) para armar "Hecho hoy".
-- `useLoops()` sin estado trae **todos** los loops, incluidos los cerrados. Si algún día pesa, paginar los cerrados.
+- `useLoops()` sin estado trae **todos** los loops, incluidos los cerrados; lo usan la vista Loops y "Hecho hoy" en Hoy. Si algún día pesa, paginar los cerrados.
 - Para matar procesos desde la shell de Claude, **ni `pkill -f` ni `pgrep -f`**: el patrón matchea la propia shell y la mata. Usar `ps -eo pid,args | grep "[t]sx"` y `kill <pid>`.
